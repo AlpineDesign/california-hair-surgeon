@@ -1,0 +1,140 @@
+---
+description: Canonical data model — MongoDB schema for User, Account, Surgery, Option, AccountSettings, GlobalDefaults
+alwaysApply: true
+---
+
+# Data Model
+
+## Option (per-account dropdown values + graft buttons)
+```js
+{
+  accountId: ObjectId,
+  type: String,        // 'hairType' | 'hairColor' | ... | 'graftButton'
+  label: String,       // for graftButton: "1/1", "2/2", etc.
+  sortOrder: Number,
+  // graftButton-only fields:
+  intactHairs?: Number,
+  totalHairs?: Number,
+  isDefault?: Boolean,
+}
+```
+- Referenced by ID from Patient and Surgery for filtering (e.g. admin: surgeries by tip style).
+- graftButton type: same pattern as other options but with intactHairs, totalHairs, isDefault. Used on Tech Dash.
+- CRUD via /api/options. Migration from AccountSettings: POST /api/options/migrate.
+
+## User
+```js
+{
+  username: String,       // login credential for all users
+  passwordHash: String,
+  roles: [String],        // ['admin', 'accountOwner', 'user'] — always an array
+  accountId: ObjectId,    // null for admins without an account
+  firstName: String,
+  lastName: String,
+  email: String,          // optional — contact info only, used for password reset
+  lastActiveAt: Date,
+}
+```
+
+## Account
+```js
+{
+  ownerId: ObjectId,
+  createdAt: Date,
+  // Branding
+  practiceName: String,
+  website: String,
+  phone: String,
+  email: String,
+  address: String,
+  logoUrl: String,
+}
+```
+
+## AccountSettings (legacy — being phased out)
+- graftButtons and option arrays have been migrated to the **Option** table.
+- If AccountSettings still exists with graftButtons, run POST /api/options/migrate to move them to Option.
+- AccountSettings can be removed once all accounts are migrated.
+
+## GlobalDefaults (single document, admin-managed — seeds new AccountSettings)
+Same shape as `AccountSettings` minus `accountId`.
+
+## Patient
+```js
+{
+  accountId: ObjectId,
+  initials: String,    // display identifier — no full name stored (privacy)
+  dob: String,
+  hairTypeId: ObjectId,    // ref Option
+  hairColorId: ObjectId,
+  hairCaliberId: ObjectId,
+  skinColorId: ObjectId,
+  createdAt: Date,
+}
+```
+- Legacy: hairType, hairColor, etc. (String) kept during migration; prefer Id fields.
+
+## Surgery
+```js
+{
+  accountId: ObjectId,
+  patientId: ObjectId,        // reference to Patient — never embed patient info on Surgery
+  technicianIds: [ObjectId],
+  status: String,             // 'active' | 'completed'
+  graftGoal: Number,          // set on create, editable during surgery
+  startedAt: Date,
+  completedAt: Date,
+  // Step 1 of New Surgery modal = select existing Patient or create new one
+  // Step 2 = surgical details below (reference Option by ID for admin filtering):
+  surgical: {
+    surgeonId: ObjectId, fueDeviceId: ObjectId, fueTipStyleId: ObjectId,
+    fueTipSizeId: ObjectId, holdingSolutionId: ObjectId, placingDeviceId: ObjectId,
+  },
+  // Legacy string fields (surgeon, fueDevice, etc.) kept during migration
+  activeButtons: [{ label: String, intactHairs: Number, totalHairs: Number }],
+  technicianButtonConfigs: [{ userId: ObjectId | String, labels: [String] }],
+  // Per-technician, per-surgery button visibility — technicians customize which graft buttons appear on Tech Dash
+  // label format: "intactHairs/totalHairs" e.g. "1/2" = 1 intact out of 2 total
+  // 2/2 = perfect 2-hair graft, 0/1 = fully transected single-hair graft
+  extraction: {
+    startedAt: Date, completedAt: Date, timerMs: Number,
+    entries: [{ label: String, intactHairs: Number, totalHairs: Number, count: Number }],
+  },
+  placement: {
+    startedAt: Date, completedAt: Date, timerMs: Number,
+    count: Number,
+  },
+}
+```
+
+## ActivityLog (per-button-click audit trail)
+```js
+{
+  surgeryId: ObjectId,
+  userId: ObjectId,         // technician who made the click
+  accountId: ObjectId,
+  action: String,          // 'extraction' | 'placement'
+  payload: {               // action-specific
+    // extraction: { label, intactHairs, totalHairs }
+    // placement: {}
+  },
+  createdAt: Date,
+}
+```
+- One record per graft button click or placement +1 click.
+- Technicians see their own rolling log; doctor (account owner) sees all technicians.
+- Edit or remove entries to correct errors — updates Surgery extraction/placement counts accordingly.
+- CRUD via /api/surgeries/:id/activities.
+
+## Reporting Formulas (derived from extraction.entries)
+
+```js
+const totalGrafts      = entries.reduce((s, e) => s + e.count, 0);
+const totalHairs       = entries.reduce((s, e) => s + e.count * e.totalHairs, 0);
+const totalIntact      = entries.reduce((s, e) => s + e.count * e.intactHairs, 0);
+const transectedHairs  = totalHairs - totalIntact;
+const hairTransectionRate  = totalHairs  ? transectedHairs / totalHairs  : 0;
+const graftTransectionRate = totalGrafts ? entries
+  .filter(e => e.intactHairs < e.totalHairs)
+  .reduce((s, e) => s + e.count, 0) / totalGrafts : 0;
+```

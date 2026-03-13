@@ -1,0 +1,38 @@
+{
+  "name": "california-hair-surgeon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "client": "npm start --prefix client",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlpineDesign/california-hair-surgeon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/AlpineDesign/california-hair-surgeon/issues"
+  },
+  "homepage": "https://github.com/AlpineDesign/california-hair-surgeon#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "parse": "^8.5.0",
+    "parse-dashboard": "^9.0.0",
+    "parse-server": "^9.5.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

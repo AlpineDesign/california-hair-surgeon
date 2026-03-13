@@ -1,0 +1,35 @@
+---
+description: All user-facing text must use the strings file for translation readiness
+alwaysApply: true
+---
+
+# Strings / Internationalization
+
+## Rule
+All user-facing text (labels, buttons, messages, placeholders) must be placed in `client/src/strings.js` and referenced via the `S` object. Do not hardcode display strings in components.
+
+## Usage
+```js
+import S from '../strings';  // or '../../strings' depending on path
+
+// Static strings
+<Typography>{S.common.save}</Typography>
+<TextField label={S.auth.login.username} />
+
+// Template with variables (use format helper)
+import { format } from '../strings';
+<Typography>{format(S.settings.editLabel, { label: 'Hair Types' })}</Typography>
+```
+
+## Adding New Strings
+1. Add the string to `client/src/strings.js` under the appropriate section (auth, common, layout, surgeries, patients, settings, etc.).
+2. Use descriptive keys: `pageTitle`, `emptyMessage`, `submitButton`, etc.
+3. For templates with placeholders, use `{placeholder}` syntax: `"Remove {name} from team?"`
+
+## Structure
+- `common` — shared (Cancel, Save, Edit, Delete, Loading…)
+- `auth` — login, signup, forgot password
+- `layout` — nav labels (Home, Surgeries, etc.)
+- `home`, `surgeries`, `patients`, `team`, `technicians`, `settings` — page-specific
+- `surgeryDetail`, `report` — surgery flow
+- `newSurgery`, `statusBadge`, `saveStatus`, etc.

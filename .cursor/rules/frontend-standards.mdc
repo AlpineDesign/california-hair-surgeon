@@ -1,0 +1,68 @@
+---
+description: Frontend coding standards — MUI tokens, reusable components, no hex colors or magic numbers
+globs: client/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Frontend Standards
+
+## Color & Styling Tokens
+
+Hex values live **only** in `client/src/theme/tokens.js`. Everywhere else use MUI theme tokens.
+
+```jsx
+// ❌ BAD
+<Box sx={{ color: '#138DFB', padding: '16px', fontSize: '14px' }} />
+
+// ✅ GOOD
+<Box sx={{ color: 'primary.main', p: 2 }}>
+  <Typography variant="body2">...</Typography>
+</Box>
+```
+
+**Gradients** are defined in `tokens.js` and used via `sx`:
+```jsx
+import { gradients } from '../theme/tokens';
+<Box sx={{ background: gradients.authBg }} />
+```
+
+## Spacing & Sizing
+
+Always use MUI spacing scale — never hardcode px values.
+
+```jsx
+// ❌ BAD
+sx={{ marginBottom: '24px', width: '240px' }}
+
+// ✅ GOOD
+sx={{ mb: 3 }}   // 3 × 8px = 24px
+```
+
+Sidebar width and other layout constants are defined once in `tokens.js`:
+```jsx
+import { layout } from '../theme/tokens';
+sx={{ width: layout.sidebarWidth }}
+```
+
+## Typography
+
+Always use MUI `variant` — never hardcode font sizes or weights.
+
+```jsx
+// ❌ BAD
+<Box sx={{ fontSize: '24px', fontWeight: 700 }}>Surgeries</Box>
+
+// ✅ GOOD
+<Typography variant="h4">Surgeries</Typography>
+```
+
+## Reusable Components
+
+Before building a new component, search `client/src/components/` for one that already exists.
+
+```
+GraftProgressBar   ← reused on Home, Surgeries list, Surgery Detail
+StatusBadge        ← reused for ACTIVE / COMPLETED labels
+PageHeader         ← reused for page title + action button rows
+DataTable          ← reused for Surgeries, Technicians, Accounts lists
+```

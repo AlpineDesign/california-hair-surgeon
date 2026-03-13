@@ -1,0 +1,55 @@
+---
+description: User roles, permissions, and access control patterns for Surg Assist
+alwaysApply: true
+---
+
+# User Roles & Permissions
+
+## Role Definitions
+
+Roles are stored as an **array** on each user. A user can hold multiple roles.
+
+```js
+// ❌ BAD
+user.role === 'admin'
+
+// ✅ GOOD
+user.roles.includes('admin')
+```
+
+### Valid Role Values
+- `admin` — global superuser, access to Accounts + Global Defaults management
+- `accountOwner` — scoped to their account, access to Dashboard, Surgeries, Technicians, Settings
+- `user` — technician, scoped to their account, access to Remote surface only
+
+## Access Control Rules
+
+Backend role checks are **authoritative**. Frontend guards are UX only.
+
+```js
+// ❌ BAD — frontend-only guard (can be bypassed)
+{user.roles.includes('admin') && <DeleteButton />}
+
+// ✅ GOOD — backend enforces it, frontend mirrors it
+// middleware/roles.js
+if (!req.user.roles.includes('admin')) return res.status(403).json({ error: 'Forbidden' });
+```
+
+## Data Scoping
+
+Every query for non-admin users must be scoped to their `accountId`.
+
+```js
+// accountOwner / user — always scope by account
+const surgeries = await Surgery.find({ accountId: req.user.accountId });
+
+// admin — can query across all accounts
+const surgeries = await Surgery.find({});
+```
+
+## Nav Routing by Role
+
+After login, route by highest-privilege role:
+- `admin` → `/admin`
+- `accountOwner` → `/dashboard`
+- `user` → `/remote`
