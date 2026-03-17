@@ -10,12 +10,28 @@ module.exports = async function mountParseServer(app) {
   const port      = process.env.PORT || 5000;
   const serverURL = process.env.PARSE_SERVER_URL || `http://localhost:${port}/parse`;
 
+  // Files adapter: GCS when GCS_BUCKET + GCP_PROJECT_ID are set, else default (GridFS)
+  const gcsBucket = process.env.GCS_BUCKET;
+  const gcpProject = process.env.GCP_PROJECT_ID || process.env.GCLOUD_PROJECT;
+  const filesAdapter = gcsBucket && gcpProject
+    ? {
+        module: '@parse/gcs-files-adapter',
+        options: {
+          projectId: gcpProject,
+          keyFilename: process.env.GCP_KEYFILE_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
+          bucket: gcsBucket,
+          directAccess: true, // serve logos directly from GCS
+        },
+      }
+    : undefined;
+
   const server = new ParseServer({
     databaseURI: process.env.MONGODB_URI,
     appId,
     masterKey,
     serverURL,
     allowClientClassCreation: false,
+    filesAdapter,
   });
 
   // v7+ requires explicit start() before mounting
