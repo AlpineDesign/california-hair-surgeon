@@ -1,42 +1,17 @@
-# Cloud Build: build image and deploy to Cloud Run
-# Trigger this on pushes to main (or configure your branch in the trigger)
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+# Cloud Build: build from source and deploy to Cloud Run
+# Env vars are managed in Cloud Run UI — they persist across deploys
 
 steps:
-  # 1. Build the Docker image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA', '.']
-
-  # 2. Push to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA']
-
-  # 3. Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - '${_SERVICE_NAME}'
-      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA'
-      - '--region=${_REGION}'
+      - 'surgassist'
+      - '--source=.'
+      - '--region=us-central1'
       - '--platform=managed'
       - '--allow-unauthenticated'
-      - '--set-env-vars=NODE_ENV=production,MONGODB_URI=${_MONGODB_URI},PARSE_APP_ID=${_PARSE_APP_ID},PARSE_MASTER_KEY=${_PARSE_MASTER_KEY},PARSE_SERVER_URL=${_PARSE_SERVER_URL},CLIENT_URL=${_CLIENT_URL}'
 
-# Store the image in Artifact Registry for this project
-images:
-  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA'
-
-# Substitution variables — set secrets in the TRIGGER UI only (never commit them)
-substitutions:
-  _SERVICE_NAME: surgassist
-  _REGION: us-central1
-  _REPOSITORY: cloud-run-source-deploy
-  _MONGODB_URI: ''
-  _PARSE_APP_ID: surgassist
-  _PARSE_MASTER_KEY: ''
-  _PARSE_SERVER_URL: ''
-  _CLIENT_URL: ''
+options:
+  logging: CLOUD_LOGGING_ONLY
