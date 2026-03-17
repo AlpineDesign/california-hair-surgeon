@@ -1,0 +1,36 @@
+# Cloud Build: build image and deploy to Cloud Run
+# Trigger this on pushes to main (or configure your branch in the trigger)
+
+steps:
+  # 1. Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA', '.']
+
+  # 2. Push to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA']
+
+  # 3. Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+
+# Store the image in Artifact Registry for this project
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:$SHORT_SHA'
+
+# Substitution variables — customize in the trigger or leave as defaults
+substitutions:
+  _SERVICE_NAME: surgassist
+  _REGION: us-central1
+  _REPOSITORY: cloud-run-source-deploy
+
+# Env vars (MONGODB_URI, PARSE_*, etc.) must be set in Cloud Run console
+# or via: gcloud run services update surgassist --set-env-vars "KEY=value"

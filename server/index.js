@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
@@ -28,6 +29,13 @@ async function start() {
   app.use('/api/accounts',  accountRoutes);
   app.use('/api/defaults',  defaultsRoutes);
   app.use('/api/patients',  patientRoutes);
+
+  // Production: serve React build
+  if (process.env.NODE_ENV === 'production') {
+    const buildPath = path.join(__dirname, '../client/build');
+    app.use(express.static(buildPath));
+    app.get('*', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+  }
 
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
