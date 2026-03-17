@@ -29,11 +29,26 @@ Once your repo is connected to Cloud Build:
    - Configuration: **Cloud Build configuration file**
    - Location: `cloudbuild.yaml` (repo root)
 
-3. **Run the trigger** (or push to the branch) – it will build and deploy to Cloud Run.
+3. **Add substitution variables** in the trigger (required for the app to start):
+   - Edit the trigger → **Substitution variables**
+   - Add these (replace with your real values):
 
-4. **Set env vars** in Cloud Run (required before the app works):
-   - [Cloud Run → your service → Edit & deploy](https://console.cloud.google.com/run)
-   - Variables: `MONGODB_URI`, `PARSE_APP_ID`, `PARSE_MASTER_KEY`, `PARSE_SERVER_URL`, `CLIENT_URL`
+   | Variable | Example |
+   |----------|---------|
+   | `_MONGODB_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/surgassist` |
+   | `_PARSE_MASTER_KEY` | Long random string (e.g. `openssl rand -base64 32`) |
+   | `_PARSE_SERVER_URL` | `https://surgassist-XXXXX-uc.a.run.app/parse` (get URL from first deploy or Cloud Run console) |
+   | `_CLIENT_URL` | `https://surgassist-XXXXX-uc.a.run.app` |
+
+   **First deploy:** Use a temporary `_PARSE_SERVER_URL` and `_CLIENT_URL` (e.g. `https://surgassist.run.app`) so the app starts. After deploy, copy the real URL from Cloud Run, update the trigger variables, and run the trigger again.
+
+4. **Run the trigger** – it will build and deploy.
+
+5. **If IAM error** ("Setting IAM policy failed"), run:
+   ```bash
+   gcloud run services add-iam-policy-binding surgassist --region=us-central1 --member=allUsers --role=roles/run.invoker
+   ```
+   Or grant your Cloud Build service account the **Cloud Run Admin** and **Service Account User** roles.
 
 ---
 
