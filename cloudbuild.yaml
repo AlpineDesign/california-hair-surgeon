@@ -1,6 +1,9 @@
 # Cloud Build: build image and deploy to Cloud Run
 # Trigger this on pushes to main (or configure your branch in the trigger)
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
 steps:
   # 1. Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
