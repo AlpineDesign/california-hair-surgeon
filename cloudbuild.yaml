@@ -7,7 +7,7 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'californiaHairSurgeon'
+      - 'californiahairsurgeon'
       - '--source=.'
       - '--region=us-central1'
       - '--platform=managed'
