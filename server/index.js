@@ -35,6 +35,9 @@ async function start() {
     const buildPath = path.join(__dirname, '../client/build');
     app.use(express.static(buildPath));
     app.get('/(.*)', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+  } else {
+    // Dev: redirect root to React dev server
+    app.get('/', (req, res) => res.redirect(process.env.CLIENT_URL || 'http://localhost:3000'));
   }
 
   const PORT = process.env.PORT || 5000;
