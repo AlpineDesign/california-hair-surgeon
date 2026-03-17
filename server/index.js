@@ -1,11 +1,11 @@
-require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
+const config = require('./config');
 
 const app = express();
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000' }));
+app.use(cors({ origin: config.clientUrl }));
 app.use(express.json());
 
 async function start() {
@@ -31,17 +31,13 @@ async function start() {
   app.use('/api/patients',  patientRoutes);
 
   // Production: serve React build
-  if (process.env.NODE_ENV === 'production') {
+  if (config.isDevelopment === false) {
     const buildPath = path.join(__dirname, '../client/build');
     app.use(express.static(buildPath));
     app.get('/(.*)', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
-  } else {
-    // Dev: redirect root to React dev server
-    app.get('/', (req, res) => res.redirect(process.env.CLIENT_URL || 'http://localhost:3000'));
   }
 
-  const PORT = process.env.PORT || 5000;
-  app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
+  app.listen(config.port, '0.0.0.0', () => console.log(`Server running on port ${config.port}`));
 }
 
 start().catch((err) => {

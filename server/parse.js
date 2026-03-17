@@ -3,30 +3,25 @@
 const { ParseServer } = require('parse-server');
 const ParseDashboard = require('parse-dashboard');
 const Parse = require('parse/node');
+const config = require('./config');
 
 module.exports = async function mountParseServer(app) {
-  const appId     = process.env.PARSE_APP_ID;
-  const masterKey = process.env.PARSE_MASTER_KEY;
-  const port      = process.env.PORT || 5000;
-  const serverURL = process.env.PARSE_SERVER_URL || `http://localhost:${port}/parse`;
+  const { appId, masterKey, serverURL } = config.parse;
 
-  // Files adapter: GCS when GCS_BUCKET + GCP_PROJECT_ID are set, else default (GridFS)
-  const gcsBucket = process.env.GCS_BUCKET;
-  const gcpProject = process.env.GCP_PROJECT_ID || process.env.GCLOUD_PROJECT;
-  const filesAdapter = gcsBucket && gcpProject
+  const filesAdapter = config.gcs?.bucket && config.gcs?.projectId
     ? {
         module: '@parse/gcs-files-adapter',
         options: {
-          projectId: gcpProject,
-          keyFilename: process.env.GCP_KEYFILE_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS || undefined,
-          bucket: gcsBucket,
-          directAccess: true, // serve logos directly from GCS
+          projectId: config.gcs.projectId,
+          keyFilename: config.gcs.keyFilename,
+          bucket: config.gcs.bucket,
+          directAccess: true,
         },
       }
     : undefined;
 
   const server = new ParseServer({
-    databaseURI: process.env.MONGODB_URI,
+    databaseURI: config.databaseURI,
     appId,
     masterKey,
     serverURL,
@@ -40,11 +35,11 @@ module.exports = async function mountParseServer(app) {
   console.log('Parse Server mounted at /parse');
 
   // Parse Dashboard — browse and edit data at /dashboard
-  if (process.env.PARSE_DASHBOARD_USER && process.env.PARSE_DASHBOARD_PASSWORD) {
+  if (config.dashboard?.user && config.dashboard?.pass) {
     const dashboard = new ParseDashboard({
       apps: [{ appId, masterKey, serverURL, appName: 'Surg Assist' }],
-      users: [{ user: process.env.PARSE_DASHBOARD_USER, pass: process.env.PARSE_DASHBOARD_PASSWORD }],
-      allowInsecureHTTP: process.env.NODE_ENV !== 'production',
+      users: [{ user: config.dashboard.user, pass: config.dashboard.pass }],
+      allowInsecureHTTP: config.isDevelopment,
     });
     app.use('/dashboard', dashboard);
     console.log('Parse Dashboard mounted at /dashboard');

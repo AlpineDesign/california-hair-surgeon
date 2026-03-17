@@ -1,17 +1,44 @@
-# Cloud Build: build from source and deploy to Cloud Run
+# Cloud Build configuration for Google Cloud Run
+# Explicit Docker build + deploy (aligned with kent-d365-connector)
 # Env vars are managed in Cloud Run UI — they persist across deploys
 
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _SERVICE_NAME: 'californiahairsurgeon'
+  _REGION: 'us-central1'
+
 steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.cloudrun'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID']
+
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'californiahairsurgeon'
-      - '--source=.'
-      - '--region=us-central1'
-      - '--platform=managed'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--port'
+      - '8080'
+      - '--ingress'
+      - 'all'
       - '--allow-unauthenticated'
 
-options:
-  logging: CLOUD_LOGGING_ONLY
+images:
+  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
