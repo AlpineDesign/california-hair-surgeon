@@ -34,7 +34,7 @@ async function start() {
   if (config.isDevelopment === false) {
     const buildPath = path.join(__dirname, '../client/build');
     app.use(express.static(buildPath));
-    app.get('/(.*)', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
+    app.get('*', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
   }
 
   app.listen(config.port, '0.0.0.0', () => console.log(`Server running on port ${config.port}`));

@@ -27,10 +27,11 @@ module.exports = {
     pass: 'Fergburger<3',
   },
 
-  // GCS file storage (for logo uploads). Omit or leave empty for default GridFS.
+  // GCS file storage (for logo uploads). Set bucket empty to use GridFS (MongoDB).
+  // Re-enable after first successful deploy and GCS bucket permissions are set.
   gcs: {
-    bucket: 'run-sources-california-hair-surgeon-us-central1',
+    bucket: '', // was: run-sources-california-hair-surgeon-us-central1
     projectId: 'california-hair-surgeon',
-    keyFilename: undefined, // optional: path to service account JSON; omit on Cloud Run
+    keyFilename: undefined,
   },
 };

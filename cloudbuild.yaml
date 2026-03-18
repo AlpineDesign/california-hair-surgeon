@@ -39,6 +39,9 @@ steps:
       - '--ingress'
       - 'all'
       - '--allow-unauthenticated'
+      - '--cpu-boost'
+      - '--timeout'
+      - '3600'
 
 images:
   - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$BUILD_ID'
