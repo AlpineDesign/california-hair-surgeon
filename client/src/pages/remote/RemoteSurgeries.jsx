@@ -93,7 +93,7 @@ export default function RemoteSurgeries() {
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 2 }}>
-                        {s.status === 'completed' && (
+                        {s.status === 'completed' ? (
                           <MuiLink
                             component="button"
                             variant="body2"
@@ -103,15 +103,16 @@ export default function RemoteSurgeries() {
                           >
                             {S.report}
                           </MuiLink>
+                        ) : (
+                          <MuiLink
+                            component={Link}
+                            to={`${BASE_PATH}/${s.id || s.objectId}`}
+                            variant="body2"
+                            fontWeight={600}
+                          >
+                            {S.dashboard}
+                          </MuiLink>
                         )}
-                        <MuiLink
-                          component={Link}
-                          to={`${BASE_PATH}/${s.id || s.objectId}`}
-                          variant="body2"
-                          fontWeight={600}
-                        >
-                          {S.dashboard}
-                        </MuiLink>
                       </Box>
                     </TableCell>
                   </TableRow>

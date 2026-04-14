@@ -27,7 +27,6 @@ import CompanyHome from './pages/admin/CompanyHome';
 import CompanySurgeries from './pages/admin/CompanySurgeries';
 import CompanyPatients from './pages/admin/CompanyPatients';
 import CompanyTeam from './pages/admin/CompanyTeam';
-import CompanySettings from './pages/admin/CompanySettings';
 
 import RemoteHome from './pages/remote/RemoteHome';
 import RemoteSurgeries from './pages/remote/RemoteSurgeries';
@@ -66,7 +65,7 @@ export default function App() {
               <Route path="/admin/clinics/:accountId/surgeries/:id" element={<SurgeryDetail />} />
               <Route path="/admin/clinics/:accountId/patients" element={<CompanyPatients />} />
               <Route path="/admin/clinics/:accountId/team" element={<CompanyTeam />} />
-              <Route path="/admin/clinics/:accountId/settings" element={<CompanySettings />} />
+              <Route path="/admin/clinics/:accountId/settings" element={<Settings />} />
             </Route>
 
             <Route element={<RemoteLayout />}>

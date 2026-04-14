@@ -17,6 +17,7 @@ import EditSurgeryModal from './EditSurgeryModal';
 import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
+const POLL_INTERVAL_MS = 5000;
 const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions, ''];
 
 export default function Surgeries() {
@@ -46,7 +47,11 @@ export default function Surgeries() {
     }
   }, []);
 
-  useEffect(() => { fetchSurgeries(); }, [fetchSurgeries]);
+  useEffect(() => {
+    fetchSurgeries();
+    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [fetchSurgeries]);
 
   const filtered = surgeries.filter((s) => {
     const name = s.patient?.initials || '';
@@ -117,7 +122,7 @@ export default function Surgeries() {
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Box sx={{ display: 'flex', gap: 2 }}>
-                        {s.status === 'completed' && (
+                        {s.status === 'completed' ? (
                           <MuiLink
                             component={Link}
                             to={`/dashboard/surgeries/${s.id || s.objectId}?report=1`}
@@ -126,15 +131,16 @@ export default function Surgeries() {
                           >
                             {S.report}
                           </MuiLink>
+                        ) : (
+                          <MuiLink
+                            component={Link}
+                            to={`/dashboard/surgeries/${s.id || s.objectId}`}
+                            variant="body2"
+                            fontWeight={600}
+                          >
+                            {S.dashboard}
+                          </MuiLink>
                         )}
-                        <MuiLink
-                          component={Link}
-                          to={`/dashboard/surgeries/${s.id || s.objectId}`}
-                          variant="body2"
-                          fontWeight={600}
-                        >
-                          {S.dashboard}
-                        </MuiLink>
                       </Box>
                     </TableCell>
                     <TableCell align="right" width={48} onClick={(e) => e.stopPropagation()}>

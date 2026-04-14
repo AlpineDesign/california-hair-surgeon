@@ -9,7 +9,19 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
+const {
+  resolveScopedAccount,
+  getAccountIdFromRequest,
+  toId,
+} = require('../middleware/accountScope');
+
+function requireOwnerOrAdminScoped(req, res, next) {
+  const roles = req.user?.roles || [];
+  if (!roles.includes('accountOwner') && !roles.includes('admin') && !roles.includes('doctor')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  return resolveScopedAccount(req, res, next);
+}
 
 const Option = Parse.Object.extend('Option');
 
@@ -39,7 +51,7 @@ function optionToGraftButton(opt) {
 // GET /api/options — list options for current account, grouped by type
 router.get('/', async (req, res) => {
   try {
-    const accountId = req.user.accountId;
+    const accountId = getAccountIdFromRequest(req);
     if (!accountId) return res.json({});
     const query = new Parse.Query(Option);
     query.equalTo('accountId', accountId);
@@ -61,7 +73,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.use(requireRole('accountOwner'));
+router.use(requireOwnerOrAdminScoped);
 
 // POST /api/options — create option
 router.post('/', async (req, res) => {
@@ -73,14 +85,14 @@ router.post('/', async (req, res) => {
     let nextSortOrder = sortOrder;
     if (nextSortOrder === undefined || nextSortOrder === null) {
       const existing = await new Parse.Query(Option)
-        .equalTo('accountId', req.user.accountId)
+        .equalTo('accountId', req.scopedAccountId)
         .equalTo('type', type)
         .find({ useMasterKey: true });
       const maxOrder = existing.reduce((m, o) => Math.max(m, o.get('sortOrder') ?? 0), -1);
       nextSortOrder = maxOrder + 1;
     }
     const option = new Option();
-    option.set('accountId', req.user.accountId);
+    option.set('accountId', req.scopedAccountId);
     option.set('type', type);
     option.set('label', label.trim());
     option.set('sortOrder', nextSortOrder);
@@ -102,9 +114,7 @@ router.patch('/:id', async (req, res) => {
     const query = new Parse.Query(Option);
     const option = await query.get(req.params.id, { useMasterKey: true });
     const aid = option.get('accountId');
-    const userAid = req.user.accountId;
-    const toId = (r) => (r == null ? null : typeof r === 'string' ? r : r?.objectId ?? r?.id ?? null);
-    if (toId(aid) !== toId(userAid)) {
+    if (toId(aid) !== toId(req.scopedAccountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { label, sortOrder, intactHairs, totalHairs, isDefault } = req.body;
@@ -128,7 +138,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Option);
     const option = await query.get(req.params.id, { useMasterKey: true });
-    if (option.get('accountId') !== req.user.accountId) {
+    if (toId(option.get('accountId')) !== toId(req.scopedAccountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await option.destroy({ useMasterKey: true });
@@ -146,10 +156,10 @@ router.post('/reorder', async (req, res) => {
     if (!type || !OPTION_TYPES.includes(type) || !Array.isArray(ids)) {
       return res.status(400).json({ error: 'type and ids array required' });
     }
-    const accountId = req.user.accountId;
+    const accountId = req.scopedAccountId;
     for (let i = 0; i < ids.length; i++) {
       const option = await new Parse.Query(Option).get(ids[i], { useMasterKey: true });
-      if (option.get('accountId') !== accountId || option.get('type') !== type) continue;
+      if (toId(option.get('accountId')) !== toId(accountId) || option.get('type') !== type) continue;
       option.set('sortOrder', i);
       await option.save(null, { useMasterKey: true });
     }
@@ -167,7 +177,7 @@ router.post('/reorder', async (req, res) => {
 // POST /api/options/migrate — create Option records from AccountSettings string arrays
 router.post('/migrate', async (req, res) => {
   try {
-    const accountId = req.user.accountId;
+    const accountId = req.scopedAccountId;
     if (!accountId) return res.status(403).json({ error: 'Forbidden' });
 
     const AccountSettings = Parse.Object.extend('AccountSettings');

@@ -9,6 +9,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
 import { Outlet, NavLink, Navigate, useParams, Link } from 'react-router-dom';
+import { setApiScopeAccountId } from '../api/scope';
 import { useAuth } from '../hooks/useAuth';
 import { AdminCompanyProvider } from '../contexts/AdminCompanyContext';
 import { getAccount } from '../api/accounts';
@@ -147,6 +148,11 @@ function AdminCompanyLayoutInner() {
       .finally(() => setLoading(false));
   }, [accountId]);
 
+  useEffect(() => {
+    setApiScopeAccountId(accountId || null);
+    return () => setApiScopeAccountId(null);
+  }, [accountId]);
+
   if (!user) return <Navigate to="/login" replace />;
   if (!user.roles?.includes('admin')) return <Navigate to="/login" replace />;
   if (!accountId) return <Navigate to="/admin/accounts" replace />;
@@ -238,7 +244,21 @@ function AdminCompanyLayoutInner() {
                 <MenuOpenIcon />
               </IconButton>
             </Box>
-            <BrandLogo dark size="sm" iconOnly={collapsed} />
+            <Box
+              component={Link}
+              to={basePath}
+              aria-label={S.home}
+              sx={{
+                display: 'inline-block',
+                lineHeight: 0,
+                borderRadius: 1,
+                color: 'inherit',
+                textDecoration: 'none',
+                '&:focus-visible': { outline: '2px solid rgba(255,255,255,0.6)', outlineOffset: 2 },
+              }}
+            >
+              <BrandLogo dark size="sm" iconOnly={collapsed} />
+            </Box>
           </Box>
 
           <AdminCompanyNav basePath={basePath} collapsed={collapsed} />

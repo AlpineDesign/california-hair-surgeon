@@ -19,12 +19,14 @@ import GraftProgressBar from '../../components/GraftProgressBar';
 import {
   getTotalGrafts, formatDate, formatStartedAt, formatElapsedMs, getPhaseElapsedMs,
   getReportStats, formatElapsedForReport, getTechnicianStatsFromActivities, getGraftCountsByTechnician,
+  getReportTechnicianColumns,
   getSurgeryTotalMs, getTechnicianDisplayName, getSelectedTechnicians, getExtractionEntries,
   formatReportDateTime, formatReportTime, formatDateMmDdYyyy,
 } from '../../utils/surgery';
 import StatusBadge from '../../components/StatusBadge';
 import PatientModal from '../../components/PatientModal';
 import EditTechniciansModal from '../../components/EditTechniciansModal';
+import EditDoctorModal from '../../components/EditDoctorModal';
 import { colors } from '../../theme/tokens';
 import S from '../../strings';
 import html2pdf from 'html2pdf.js';
@@ -48,14 +50,31 @@ const SURGICAL_FIELDS = [
   { key: 'placingDevice', label: 'Placing Device', optionsKey: 'placingDevices' },
 ];
 
+const POLL_INTERVAL_MS = 5000;
+
 function useSurgeryActivities(surgeryId, refreshTrigger = 0) {
   const [activities, setActivities] = useState([]);
+  const load = useCallback(async () => {
+    if (!surgeryId) return;
+    try {
+      const data = await getActivities(surgeryId);
+      setActivities(Array.isArray(data) ? data : []);
+    } catch {
+      setActivities([]);
+    }
+  }, [surgeryId]);
+
   useEffect(() => {
     if (!surgeryId) return;
-    getActivities(surgeryId)
-      .then(setActivities)
-      .catch(() => setActivities([]));
-  }, [surgeryId, refreshTrigger]);
+    load();
+  }, [surgeryId, load, refreshTrigger]);
+
+  useEffect(() => {
+    if (!surgeryId) return;
+    const id = setInterval(load, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [surgeryId, load]);
+
   return activities;
 }
 
@@ -279,8 +298,9 @@ function NotStartedState({ surgery, technicians, doctors = [], onTechniciansChan
   );
 }
 
-function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, onTechniciansChange, hidePatientEdit }) {
+function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, doctors = [], onTechniciansChange, onDoctorChange, hidePatientEdit }) {
   const [techniciansModalOpen, setTechniciansModalOpen] = useState(false);
+  const [doctorModalOpen, setDoctorModalOpen] = useState(false);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [activitiesRefresh, setActivitiesRefresh] = useState(0);
   const activities = useSurgeryActivities(surgeryId, activitiesRefresh);
@@ -416,6 +436,12 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, o
   const patientId = patient?.id || patient?.objectId;
   const patientHair = [patient?.hairType, patient?.hairColor].filter(Boolean).join(' ') || '—';
   const technicianNames = selectedTechnicians.map((t) => getTechnicianDisplayName(t));
+  const surgical = surgery?.surgical || {};
+  const currentDoctorId = surgical.doctorId || surgical.surgeonId || '';
+  const currentDoctorUser = doctors.find((d) => (d.id || d.objectId) === currentDoctorId);
+  const doctorDisplayName = currentDoctorUser
+    ? [currentDoctorUser.firstName, currentDoctorUser.lastName].filter(Boolean).join(' ') || currentDoctorUser.username
+    : (surgical.doctor || surgical.surgeon || '—');
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', p: 4, width: '100%', maxWidth: 1400, mx: 'auto' }}>
@@ -438,7 +464,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, o
             </Box>
 
             <Box sx={{ minWidth: 160, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: .25 }}>
                 <Typography variant="subtitle1" fontWeight={600} color="text.primary">Patient</Typography>
                 {patientId && !hidePatientEdit && (
                   <Link
@@ -447,7 +473,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, o
                     sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main' }}
                     onClick={() => setPatientModalOpen(true)}
                   >
-                    Edit
+                    {S.edit}
                   </Link>
                 )}
               </Box>
@@ -463,26 +489,49 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, o
               <Typography variant="body2" color="text.primary" sx={{ py: 0.25 }}>Caliber: {patient?.hairCaliber || '—'}</Typography>
             </Box>
 
-            <Box sx={{ minWidth: 140, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600} color="text.primary">Technicians</Typography>
-                <Link
-                  component="button"
-                  underline="always"
-                  sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main' }}
-                  onClick={() => setTechniciansModalOpen(true)}
-                >
-                  Edit
-                </Link>
+            <Box sx={{ minWidth: 140, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', gap: 1.5 }}>
+              <Box sx={{ width: '100%' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="subtitle1" fontWeight={600} color="text.primary" sx={{ lineHeight: 1.25 }}>Technicians</Typography>
+                  <Link
+                    component="button"
+                    underline="always"
+                    sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main' }}
+                    onClick={() => setTechniciansModalOpen(true)}
+                  >
+                    {S.edit}
+                  </Link>
+                </Box>
+                <Typography variant="body2" color="text.primary" sx={{ pt: 0, pb: 0.25 }}>{technicianNames.length ? technicianNames.join(', ') : '—'}</Typography>
+                <EditTechniciansModal
+                  open={techniciansModalOpen}
+                  onClose={() => setTechniciansModalOpen(false)}
+                  technicians={technicians}
+                  value={surgery?.technicianIds || []}
+                  onSave={(ids) => onTechniciansChange(ids)}
+                />
               </Box>
-              <Typography variant="body2" color="text.primary" sx={{ py: 0.25 }}>{technicianNames.length ? technicianNames.join(', ') : '—'}</Typography>
-              <EditTechniciansModal
-                open={techniciansModalOpen}
-                onClose={() => setTechniciansModalOpen(false)}
-                technicians={technicians}
-                value={surgery?.technicianIds || []}
-                onSave={(ids) => onTechniciansChange(ids)}
-              />
+              <Box sx={{ width: '100%' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Typography variant="subtitle1" fontWeight={600} color="text.primary" sx={{ lineHeight: 1.25 }}>{S.doctor}</Typography>
+                  <Link
+                    component="button"
+                    underline="always"
+                    sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main' }}
+                    onClick={() => setDoctorModalOpen(true)}
+                  >
+                    {S.edit}
+                  </Link>
+                </Box>
+                <Typography variant="body2" color="text.primary" sx={{ pt: 0, pb: 0.25 }}>{doctorDisplayName}</Typography>
+                <EditDoctorModal
+                  open={doctorModalOpen}
+                  onClose={() => setDoctorModalOpen(false)}
+                  doctors={doctors}
+                  value={currentDoctorId}
+                  onSave={(doctorId, name) => onDoctorChange?.(doctorId, name)}
+                />
+              </Box>
             </Box>
 
             <Box sx={{ alignSelf: 'flex-end' }}>
@@ -670,8 +719,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
   const placementTotalMs = getPhaseElapsedMs(surgery?.placement) || null;
 
   const { byTech, graftTypes, techIds } = getGraftCountsByTechnician(activities, graftButtons);
-  const techList = technicians.filter((t) => techIds.includes(t.id || t.objectId));
-  const techColumns = techList.length ? techList : getSelectedTechnicians(technicians, surgery);
+  const techColumns = getReportTechnicianColumns(technicians, surgery, activities, techIds);
   const technicianStats = getTechnicianStatsFromActivities(activities);
 
   const handleExportPdf = useCallback(() => {
@@ -746,7 +794,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
       <Box ref={reportRef} data-report-pdf>
       {/* Header: Clinic left, Logo right */}
       <Paper sx={{ p: 4, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box>
             <Typography variant="h5" fontWeight={700} color="text.primary" sx={{ mb: 0.5 }}>
               {company?.practiceName || '—'}
@@ -931,7 +979,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
                   {techColumns.map((t) => (
                     <TableCell key={t.id || t.objectId} align="center"><Typography variant="body2" fontWeight={600} color="text.primary">{getTechnicianDisplayName(t)}</Typography></TableCell>
                   ))}
-                  <TableCell align="center"><Typography variant="body2" fontWeight={600} color="text.primary">Total</Typography></TableCell>
+                  <TableCell align="right"><Typography variant="body2" fontWeight={600} color="text.primary">Total</Typography></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -954,7 +1002,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
                           <Typography variant="body2" color="text.primary">{fmt(technicianStats.get(tech.id || tech.objectId)?.[key])}</Typography>
                         </TableCell>
                       ))}
-                      <TableCell align="center"><Typography variant="body2" fontWeight={600} color="text.primary">{fmt(totalVal)}</Typography></TableCell>
+                      <TableCell align="right"><Typography variant="body2" fontWeight={600} color="text.primary">{fmt(totalVal)}</Typography></TableCell>
                     </TableRow>
                   );
                 })}
@@ -1017,6 +1065,12 @@ export default function SurgeryDetail() {
   }, [fetchSurgery]);
 
   useEffect(() => {
+    if (!id) return;
+    const interval = setInterval(fetchSurgery, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [id, fetchSurgery]);
+
+  useEffect(() => {
     const params = adminCompany?.accountId ? { accountId: adminCompany.accountId } : {};
     getTechnicians(params).then(setTechnicians).catch(() => {});
   }, [adminCompany?.accountId]);
@@ -1066,9 +1120,21 @@ export default function SurgeryDetail() {
     }
   };
 
-  const handleDoctorChange = async (doctorId, doctor) => {
+  const handleDoctorChange = async (doctorId, doctorName) => {
     try {
-      const surgical = { ...(surgery?.surgical || {}), doctorId: doctorId || undefined, doctor: doctor || undefined };
+      const prev = surgery?.surgical || {};
+      const surgical = { ...prev };
+      if (doctorId) {
+        surgical.doctorId = doctorId;
+        surgical.doctor = doctorName;
+        delete surgical.surgeonId;
+        delete surgical.surgeon;
+      } else {
+        delete surgical.doctorId;
+        delete surgical.doctor;
+        delete surgical.surgeonId;
+        delete surgical.surgeon;
+      }
       const updated = await updateSurgery(id, { surgical });
       setSurgery(updated);
     } catch (err) {
@@ -1200,7 +1266,9 @@ export default function SurgeryDetail() {
             options={options}
             onUpdate={setSurgery}
             technicians={technicians}
+            doctors={doctors}
             onTechniciansChange={handleTechniciansChange}
+            onDoctorChange={handleDoctorChange}
             hidePatientEdit={!!adminCompany}
           />
         ) : done ? (

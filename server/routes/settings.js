@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole  = require('../middleware/roles');
+const { resolveScopedAccount, toId } = require('../middleware/accountScope');
 const { getGraftButtonsForAccount, saveGraftButtonsForAccount } = require('./options');
 
 const Account = Parse.Object.extend('Account');
@@ -13,14 +13,32 @@ function toJSON(obj) {
   return { id: obj.id, ...obj.toJSON() };
 }
 
-router.use(authenticate, requireRole('accountOwner'));
+router.use(authenticate, resolveScopedAccount);
 
-// GET /api/settings — account branding + owner profile
+// GET /api/settings — account branding + optional owner summary (for admin editing clinic)
 router.get('/', async (req, res) => {
   try {
     const query = new Parse.Query(Account);
-    const account = await query.get(req.user.accountId, { useMasterKey: true });
-    res.json(toJSON(account));
+    const account = await query.get(req.scopedAccountId, { useMasterKey: true });
+    const result = toJSON(account);
+    const oid = account.get('ownerId');
+    if (oid) {
+      const uid = toId(oid);
+      if (uid) {
+        try {
+          const owner = await new Parse.Query(Parse.User).get(uid, { useMasterKey: true });
+          result.owner = {
+            id: owner.id,
+            username: owner.get('username') || '',
+            firstName: owner.get('firstName') || '',
+            lastName: owner.get('lastName') || '',
+            email: owner.get('email') || '',
+            phone: owner.get('phone') || '',
+          };
+        } catch (_) { /* owner missing */ }
+      }
+    }
+    res.json(result);
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -31,7 +49,7 @@ router.get('/', async (req, res) => {
 router.patch('/', async (req, res) => {
   try {
     const query = new Parse.Query(Account);
-    const account = await query.get(req.user.accountId, { useMasterKey: true });
+    const account = await query.get(req.scopedAccountId, { useMasterKey: true });
     Object.entries(req.body).forEach(([k, v]) => account.set(k, v));
     await account.save(null, { useMasterKey: true });
     res.json(toJSON(account));
@@ -44,7 +62,7 @@ router.patch('/', async (req, res) => {
 // GET /api/settings/options — Option entities by type + graftButtons from Option table
 router.get('/options', async (req, res) => {
   try {
-    const accountId = req.user.accountId;
+    const accountId = req.scopedAccountId;
     const result = {};
     const optQuery = new Parse.Query(Option);
     optQuery.equalTo('accountId', accountId);
@@ -66,10 +84,10 @@ router.get('/options', async (req, res) => {
 router.patch('/options', async (req, res) => {
   try {
     if (req.body.graftButtons !== undefined) {
-      await saveGraftButtonsForAccount(req.user.accountId, req.body.graftButtons);
+      await saveGraftButtonsForAccount(req.scopedAccountId, req.body.graftButtons);
     }
     const result = {};
-    const accountId = req.user.accountId;
+    const accountId = req.scopedAccountId;
     const optQuery = new Parse.Query(Option);
     optQuery.equalTo('accountId', accountId);
     optQuery.containedIn('type', OPTION_TYPES);

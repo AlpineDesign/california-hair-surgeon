@@ -64,7 +64,7 @@ export default function AdminSurgeries() {
 
   const fetchSurgeries = useCallback(async () => {
     try {
-      const params = accountFilter ? { accountId: accountFilter } : {};
+      const params = accountFilter ? { accountId: accountFilter } : { all: '1' };
       const data = await getSurgeries(params);
       setSurgeries(data);
     } catch (err) {

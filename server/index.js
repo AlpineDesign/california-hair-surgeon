@@ -5,8 +5,12 @@ const config = require('./config');
 
 const app = express();
 
-app.use(cors({ origin: config.clientUrl }));
-app.use(express.json());
+app.use(cors({
+  origin: config.clientUrl,
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Scope-Account-Id'],
+}));
+// Logo upload POSTs base64 JSON; default 100kb is too small (see /api/accounts/logo).
+app.use(express.json({ limit: '8mb' }));
 
 async function start() {
   // Parse Server must be mounted and started before routes so the SDK is initialized

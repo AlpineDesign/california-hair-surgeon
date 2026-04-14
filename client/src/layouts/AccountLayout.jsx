@@ -9,7 +9,7 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import BusinessIcon from '@mui/icons-material/Business';
 import TuneIcon from '@mui/icons-material/Tune';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
-import { Outlet, NavLink, Navigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, Navigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { layout, gradients } from '../theme/tokens';
 import BrandLogo from '../components/BrandLogo';
@@ -55,8 +55,19 @@ export default function AccountLayout() {
   };
 
   if (!user) return <Navigate to="/login" replace />;
-  if (!user.roles.includes('accountOwner') && !user.roles.includes('admin')) return <Navigate to="/login" replace />;
+  if (!user.roles.includes('accountOwner') && !user.roles.includes('admin') && !user.roles.includes('doctor')) return <Navigate to="/login" replace />;
   if (location.pathname.startsWith('/admin/') && !user.roles?.includes('admin')) return <Navigate to="/dashboard" replace />;
+
+  /** Doctor-only staff (not clinic owner / admin): no Team tab; block direct /team URL. */
+  const doctorLimited =
+    user.roles?.includes('doctor') && !user.roles?.includes('accountOwner') && !user.roles?.includes('admin');
+  if (doctorLimited && location.pathname.startsWith('/dashboard/team')) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  const dashboardNavItems = navItems.filter(
+    (item) => item.path !== '/dashboard/team' || !doctorLimited,
+  );
 
   const sidebarWidth = collapsed ? layout.sidebarCollapsedWidth : layout.sidebarWidth;
   const initials = [user.firstName, user.lastName]
@@ -87,7 +98,21 @@ export default function AccountLayout() {
         }}
       >
         <Box sx={{ p: collapsed ? 1.5 : 2.5, pt: collapsed ? 4 : 5, pb: collapsed ? 3 : 4, mb: 2, textAlign: 'center', boxShadow: '0 10px 10px 0 #00000026', position: 'relative' }}>
-          <BrandLogo dark size="sm" iconOnly={collapsed} />
+          <Box
+            component={Link}
+            to="/dashboard"
+            aria-label={S.home}
+            sx={{
+              display: 'inline-block',
+              lineHeight: 0,
+              borderRadius: 1,
+              color: 'inherit',
+              textDecoration: 'none',
+              '&:focus-visible': { outline: '2px solid rgba(255,255,255,0.6)', outlineOffset: 2 },
+            }}
+          >
+            <BrandLogo dark size="sm" iconOnly={collapsed} />
+          </Box>
           <IconButton
             onClick={toggleCollapsed}
             size="small"
@@ -105,7 +130,7 @@ export default function AccountLayout() {
         </Box>
 
         <List sx={{ flex: 1, px: collapsed ? 0.5 : 1, pt: 1, overflow: 'auto' }}>
-          {navItems.map(({ label, icon, path }) => (
+          {dashboardNavItems.map(({ label, icon, path }) => (
             <ListItemButton
               key={path}
               component={NavLink}

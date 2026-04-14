@@ -117,14 +117,15 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, onNew }) {
               </TableCell>
               <TableCell>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                  {showReport && (
+                  {showReport ? (
                     <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}?report=1`} variant="body2" fontWeight={600}>
                       {S.report}
                     </MuiLink>
+                  ) : (
+                    <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
+                      {S.dashboard}
+                    </MuiLink>
                   )}
-                  <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                    {S.dashboard}
-                  </MuiLink>
                 </Box>
               </TableCell>
             </TableRow>

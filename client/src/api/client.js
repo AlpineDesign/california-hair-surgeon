@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getApiScopeAccountId } from './scope';
 
 const client = axios.create({
   baseURL: process.env.NODE_ENV === 'production' ? '' : 'http://localhost:8080',
@@ -11,6 +12,12 @@ client.interceptors.request.use((config) => {
       const { token } = JSON.parse(stored);
       if (token) config.headers.Authorization = `Bearer ${token}`;
     } catch {}
+  }
+  const scope = getApiScopeAccountId();
+  if (scope) {
+    config.headers['X-Scope-Account-Id'] = scope;
+  } else if (config.headers['X-Scope-Account-Id']) {
+    delete config.headers['X-Scope-Account-Id'];
   }
   return config;
 });

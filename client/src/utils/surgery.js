@@ -103,9 +103,61 @@ export function getTechnicianDisplayName(user) {
   return name || user.username || '—';
 }
 
+/** User id string from an activity log row (Pointer or string in JSON). */
+export function getActivityUserId(a) {
+  if (!a) return null;
+  const u = a.userId;
+  return (
+    u?.id ??
+    u?.objectId ??
+    (typeof u === 'string' ? u : null) ??
+    a.user?.id ??
+    null
+  );
+}
+
+/**
+ * surgery.technicianIds from the API may be plain strings or pointer-shaped objects.
+ */
+export function getTechnicianIdStrings(surgery) {
+  const raw = surgery?.technicianIds || [];
+  return raw
+    .map((t) => (typeof t === 'string' ? t : t?.objectId ?? t?.id ?? null))
+    .filter(Boolean);
+}
+
 export function getSelectedTechnicians(technicians, surgery) {
-  const ids = surgery?.technicianIds || [];
-  return technicians.filter((t) => ids.includes(t.id || t.objectId));
+  const idSet = new Set(getTechnicianIdStrings(surgery));
+  return (technicians || []).filter((t) => idSet.has(t.id || t.objectId));
+}
+
+/**
+ * Columns for the completed-surgery report: assigned techs first, then activity-only users
+ * (names from activity.user when missing from the technicians list).
+ */
+export function getReportTechnicianColumns(technicians, surgery, activities, techIdsFromActivities = []) {
+  const assigned = getSelectedTechnicians(technicians, surgery);
+  const seen = new Set(assigned.map((t) => t.id || t.objectId).filter(Boolean));
+  const cols = [...assigned];
+  for (const uid of techIdsFromActivities) {
+    if (!uid || seen.has(uid)) continue;
+    seen.add(uid);
+    const fromList = (technicians || []).find((t) => (t.id || t.objectId) === uid);
+    if (fromList) {
+      cols.push(fromList);
+      continue;
+    }
+    const act = (activities || []).find((a) => getActivityUserId(a) === uid);
+    const u = act?.user;
+    cols.push({
+      id: uid,
+      objectId: uid,
+      firstName: u?.firstName ?? '',
+      lastName: u?.lastName ?? '',
+      username: u?.username ?? '—',
+    });
+  }
+  return cols;
 }
 
 export function getExtractionEntries(surgery, options = {}) {
@@ -128,7 +180,7 @@ export function getExtractionEntries(surgery, options = {}) {
 export function getTechnicianStatsFromActivities(activities) {
   const byUser = new Map();
   for (const a of activities || []) {
-    const uid = a.userId?.id ?? a.userId?.objectId ?? (typeof a.userId === 'string' ? a.userId : null) ?? a.user?.id;
+    const uid = getActivityUserId(a);
     if (!uid) continue;
     if (!byUser.has(uid)) {
       byUser.set(uid, { graftCount: 0, totalHairs: 0, totalIntact: 0, transectedGrafts: 0 });
@@ -166,7 +218,7 @@ export function getGraftCountsByTechnician(activities, graftButtons = []) {
   const labelSet = new Set();
   const techIds = new Set();
   for (const a of activities || []) {
-    const uid = a.userId?.id ?? a.userId?.objectId ?? (typeof a.userId === 'string' ? a.userId : null) ?? a.user?.id;
+    const uid = getActivityUserId(a);
     if (!uid || a.action !== 'extraction' || !a.payload?.label) continue;
     techIds.add(uid);
     labelSet.add(a.payload.label);

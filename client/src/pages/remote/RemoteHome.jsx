@@ -117,7 +117,7 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onRepor
               </TableCell>
               <TableCell>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                  {showReport && s.status === 'completed' && (
+                  {showReport && s.status === 'completed' ? (
                     <MuiLink
                       component="button"
                       variant="body2"
@@ -127,10 +127,11 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onRepor
                     >
                       {S.report}
                     </MuiLink>
+                  ) : (
+                    <MuiLink component={Link} to={`${basePath}/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
+                      {S.dashboard}
+                    </MuiLink>
                   )}
-                  <MuiLink component={Link} to={`${basePath}/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                    {S.dashboard}
-                  </MuiLink>
                 </Box>
               </TableCell>
             </TableRow>

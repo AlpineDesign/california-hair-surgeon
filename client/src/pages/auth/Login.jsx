@@ -20,7 +20,7 @@ export default function Login() {
     setLoading(true);
     try {
       const user = await login(form.username, form.password);
-      if (user.roles.includes('admin') || user.roles.includes('accountOwner')) {
+      if (user.roles.includes('admin') || user.roles.includes('accountOwner') || user.roles.includes('doctor')) {
         navigate('/dashboard');
       } else {
         navigate('/remote');

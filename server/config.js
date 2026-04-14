@@ -1,10 +1,11 @@
 // Hardcoded config (mirrors kent-d365-connector approach — no .env)
 // Edit values below for your environment.
 // PORT still comes from process.env for Cloud Run compatibility.
+// Default 8080: matches client/src/api/client.js in dev; macOS reserves 5000 for AirPlay Receiver.
 // WARNING: This file contains secrets. Do not commit if the repo is public.
 
 const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 8080;
 
 const productionBaseUrl = 'https://californiahairsurgeon-691066386045.us-central1.run.app';
 

@@ -1,7 +1,8 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole  = require('../middleware/roles');
+const requireRole = require('../middleware/roles');
+const isBenchTechnician = requireRole.isBenchTechnician;
 
 const Surgery = Parse.Object.extend('Surgery');
 const Patient = Parse.Object.extend('Patient');
@@ -26,8 +27,7 @@ async function getSurgeryForAccess(id, req) {
   const surgeryAccountId = toId(surgery.get('accountId'));
   const userAccountId = toId(req.user.accountId);
   if (!surgeryAccountId || !userAccountId || surgeryAccountId !== userAccountId) return null;
-  const isTechnician = !isAccountOwner && !isAdmin;
-  if (isTechnician) {
+  if (isBenchTechnician(req)) {
     const techIds = (surgery.get('technicianIds') || []).map((t) => toId(t)).filter(Boolean);
     if (!techIds.includes(req.user.id)) return null;
   }
@@ -93,14 +93,25 @@ async function withGraftButtons(surgeryJson) {
 
 router.use(authenticate);
 
-// GET /api/surgeries[?patientId=xxx][?accountId=xxx] — admin: [?accountId=][?doctorOptionId=][?fueDeviceId=]...
+// GET /api/surgeries[?patientId=xxx][?accountId=xxx]
+// — Non-admin: always scoped to req.user.accountId.
+// — Admin: default scoped to req.user.accountId (dashboard) unless ?all=1 (All Surgeries / global).
+//   Optional ?accountId= narrows further (admin filters, per-clinic views).
 router.get('/', async (req, res) => {
   try {
     const query = new Parse.Query(Surgery);
-    if (!req.user.roles.includes('admin')) {
+    const isAdmin = req.user.roles.includes('admin');
+    const wantAll = isAdmin && (req.query.all === '1' || req.query.all === 'true');
+    if (!isAdmin) {
       query.equalTo('accountId', req.user.accountId);
+    } else if (wantAll) {
+      if (req.query.accountId) query.equalTo('accountId', req.query.accountId);
     } else if (req.query.accountId) {
       query.equalTo('accountId', req.query.accountId);
+    } else if (req.user.accountId) {
+      query.equalTo('accountId', req.user.accountId);
+    } else {
+      return res.json([]);
     }
     if (req.query.patientId) {
       query.equalTo('patientId', req.query.patientId);
@@ -145,9 +156,8 @@ router.get('/', async (req, res) => {
       return base;
     });
 
-    // Technicians (role 'user') only see surgeries they are assigned to
-    const isTechnician = !req.user.roles?.includes('accountOwner') && !req.user.roles?.includes('admin');
-    if (isTechnician) {
+    // Bench technicians only see surgeries they are assigned to
+    if (isBenchTechnician(req)) {
       surgeries = surgeries.filter((s) => {
         const ids = (s.technicianIds || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
         return ids.includes(req.user.id);
@@ -177,7 +187,7 @@ router.post('/', requireRole('accountOwner'), async (req, res) => {
 
 // ─── Activity Log ──────────────────────────────────────────────────────────
 
-// GET /api/surgeries/:id/activities — technicians see own, accountOwner/admin see all
+// GET /api/surgeries/:id/activities — bench techs see own when assigned; owner/admin/doctor see all
 router.get('/:id/activities', async (req, res) => {
   try {
     const surgery = await getSurgeryForAccess(req.params.id, req);
@@ -185,7 +195,7 @@ router.get('/:id/activities', async (req, res) => {
     const isAccountOwner = req.user.roles?.includes('accountOwner');
     const isAdmin = req.user.roles?.includes('admin');
     const technicianIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? t);
-    const filterToOwn = !isAccountOwner && !isAdmin && technicianIds.includes(req.user.id);
+    const filterToOwn = isBenchTechnician(req) && technicianIds.includes(req.user.id);
     const query = new Parse.Query(ActivityLog);
     query.equalTo('surgeryId', surgery.id);
     if (filterToOwn) query.equalTo('userId', req.user.id);
@@ -311,8 +321,7 @@ router.get('/:id', async (req, res) => {
     if (!req.user.roles.includes('admin') && surgery.get('accountId') !== req.user.accountId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const isTechnician = !req.user.roles?.includes('accountOwner') && !req.user.roles?.includes('admin');
-    if (isTechnician) {
+    if (isBenchTechnician(req)) {
       const techIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
       if (!techIds.includes(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
     }
@@ -331,9 +340,8 @@ router.patch('/:id', async (req, res) => {
     if (!req.user.roles?.includes('admin') && surgery.get('accountId') !== req.user.accountId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const isTechnician = !req.user.roles?.includes('accountOwner') && !req.user.roles?.includes('admin');
     const technicianIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
-    if (isTechnician) {
+    if (isBenchTechnician(req)) {
       if (!technicianIds.includes(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
       const allowed = Object.keys(req.body);
       if (allowed.length !== 1 || allowed[0] !== 'technicianButtonConfigs') {

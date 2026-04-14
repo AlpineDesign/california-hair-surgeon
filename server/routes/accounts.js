@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
 const requireRole  = require('../middleware/roles');
+const { resolveScopedAccount } = require('../middleware/accountScope');
 
 const Account = Parse.Object.extend('Account');
 
@@ -13,11 +14,11 @@ router.use(authenticate);
 
 // ── Account owner: update own account ────────────────────────────────────────
 
-// PATCH /api/accounts/mine
-router.patch('/mine', requireRole('accountOwner'), async (req, res) => {
+// PATCH /api/accounts/mine — own clinic or admin with X-Scope-Account-Id
+router.patch('/mine', resolveScopedAccount, async (req, res) => {
   try {
     const query = new Parse.Query(Account);
-    const account = await query.get(req.user.accountId, { useMasterKey: true });
+    const account = await query.get(req.scopedAccountId, { useMasterKey: true });
     Object.entries(req.body).forEach(([k, v]) => account.set(k, v));
     await account.save(null, { useMasterKey: true });
     res.json(toJSON(account));
@@ -28,7 +29,7 @@ router.patch('/mine', requireRole('accountOwner'), async (req, res) => {
 });
 
 // POST /api/accounts/logo — upload logo, returns { url }
-router.post('/logo', requireRole('accountOwner'), async (req, res) => {
+router.post('/logo', resolveScopedAccount, async (req, res) => {
   try {
     const { base64, name, type } = req.body;
     if (!base64 || !name) return res.status(400).json({ error: 'base64 and name required' });
@@ -39,7 +40,7 @@ router.post('/logo', requireRole('accountOwner'), async (req, res) => {
 
     // Persist on the account
     const query = new Parse.Query(Account);
-    const account = await query.get(req.user.accountId, { useMasterKey: true });
+    const account = await query.get(req.scopedAccountId, { useMasterKey: true });
     account.set('logoUrl', url);
     await account.save(null, { useMasterKey: true });
 

@@ -15,6 +15,7 @@ import TableLoader from '../../components/TableLoader';
 import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
+const POLL_INTERVAL_MS = 5000;
 const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions];
 
 export default function CompanySurgeries() {
@@ -41,6 +42,8 @@ export default function CompanySurgeries() {
   useEffect(() => {
     setLoading(true);
     fetchSurgeries();
+    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
   }, [fetchSurgeries]);
 
   const filtered = surgeries.filter((s) => {
@@ -101,26 +104,27 @@ export default function CompanySurgeries() {
                     </TableCell>
                     <TableCell>
                       <Box sx={{ display: 'flex', gap: 2 }}>
-                        {s.status === 'completed' && (
-                        <MuiLink
-                          component={Link}
-                          to={`${basePath}/surgeries/${s.id || s.objectId}?report=1`}
-                          state={{ backTo: basePath }}
-                          variant="body2"
-                          fontWeight={600}
-                        >
-                          {S.report}
-                        </MuiLink>
+                        {s.status === 'completed' ? (
+                          <MuiLink
+                            component={Link}
+                            to={`${basePath}/surgeries/${s.id || s.objectId}?report=1`}
+                            state={{ backTo: basePath }}
+                            variant="body2"
+                            fontWeight={600}
+                          >
+                            {S.report}
+                          </MuiLink>
+                        ) : (
+                          <MuiLink
+                            component={Link}
+                            to={`${basePath}/surgeries/${s.id || s.objectId}`}
+                            state={{ backTo: basePath }}
+                            variant="body2"
+                            fontWeight={600}
+                          >
+                            {S.dashboard}
+                          </MuiLink>
                         )}
-                        <MuiLink
-                          component={Link}
-                          to={`${basePath}/surgeries/${s.id || s.objectId}`}
-                          state={{ backTo: basePath }}
-                          variant="body2"
-                          fontWeight={600}
-                        >
-                          {S.dashboard}
-                        </MuiLink>
                       </Box>
                     </TableCell>
                   </TableRow>

@@ -12,7 +12,7 @@ import TableLoader from '../../components/TableLoader';
 import { formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
-const COLUMNS = ['Name', 'Role', 'Email', 'Last Active'];
+const COLUMNS = [S.name, S.username, S.role, S.email, S.lastActive];
 
 function roleLabel(roles = []) {
   if (roles.includes('doctor')) return 'Doctor';
@@ -46,9 +46,10 @@ export default function CompanyTeam() {
 
   const filtered = users.filter((u) => {
     const name = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+    const uname = (u.username || '').toLowerCase();
     const email = (u.email || '').toLowerCase();
     const q = search.toLowerCase();
-    const matchesSearch = name.includes(q) || email.includes(q);
+    const matchesSearch = name.includes(q) || uname.includes(q) || email.includes(q);
     const matchesRole =
       roleFilter === 'all' ||
       (roleFilter === 'doctor' && (u.roles || []).includes('doctor')) ||
@@ -102,6 +103,9 @@ export default function CompanyTeam() {
                       <Typography variant="body1" fontWeight={600}>
                         {[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}
                       </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary">{u.username || '—'}</Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" color="text.secondary">{roleLabel(u.roles)}</Typography>

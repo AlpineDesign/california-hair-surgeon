@@ -8,7 +8,7 @@ import HomeIcon from '@mui/icons-material/Home';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import SettingsIcon from '@mui/icons-material/Settings';
 import MenuOpenIcon from '@mui/icons-material/MenuOpen';
-import { Outlet, NavLink, Navigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, Navigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { layout, gradients } from '../theme/tokens';
 import BrandLogo from '../components/BrandLogo';
@@ -78,7 +78,21 @@ export default function RemoteLayout() {
         }}
       >
         <Box sx={{ p: collapsed ? 1.5 : 2.5, pt: collapsed ? 4 : 5, pb: collapsed ? 3 : 4, mb: 2, textAlign: 'center', boxShadow: '0 10px 10px 0 #00000026', position: 'relative' }}>
-          <BrandLogo dark size="sm" iconOnly={collapsed} />
+          <Box
+            component={Link}
+            to="/remote"
+            aria-label={S.home}
+            sx={{
+              display: 'inline-block',
+              lineHeight: 0,
+              borderRadius: 1,
+              color: 'inherit',
+              textDecoration: 'none',
+              '&:focus-visible': { outline: '2px solid rgba(255,255,255,0.6)', outlineOffset: 2 },
+            }}
+          >
+            <BrandLogo dark size="sm" iconOnly={collapsed} />
+          </Box>
           <IconButton
             onClick={toggleCollapsed}
             size="small"

@@ -1,20 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Box, Paper, Typography, TextField, Button, Grid,
-  Divider, InputAdornment,
+  Divider, InputAdornment, CircularProgress,
 } from '@mui/material';
 import { useAuth } from '../../hooks/useAuth';
 import useAutoSave from '../../hooks/useAutoSave';
-import { updateMe } from '../../api/users';
+import { updateMe, updateUser } from '../../api/users';
 import { updateMyAccount, uploadLogo } from '../../api/accounts';
 import { getSettings, getOptions, updateOptions } from '../../api/settings';
 import { migrateOptions } from '../../api/options';
 import ResetOwnPasswordModal from '../../components/ResetOwnPasswordModal';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import PageHeader from '../../components/PageHeader';
 import ApplicationSettingsEditor from '../../components/ApplicationSettingsEditor';
 import SaveStatus from '../../components/SaveStatus';
 import S from '../../strings';
+import { useAdminCompany } from '../../contexts/AdminCompanyContext';
 
 // ─── Section card ─────────────────────────────────────────────────────────────
 
@@ -42,6 +45,11 @@ function Section({ title, description, saveStatus, children }) {
 
 export default function Settings() {
   const { user } = useAuth();
+  const adminCompany = useAdminCompany();
+  /** Staff doctors (not clinic owner / admin): personal settings only. */
+  const doctorLimited =
+    user?.roles?.includes('doctor') && !user?.roles?.includes('accountOwner') && !user?.roles?.includes('admin');
+  const [ownerUserId, setOwnerUserId] = useState(null);
   const [ready, setReady] = useState(false);
 
   // ── Personal ──────────────────────────────────────────────────────────────
@@ -61,19 +69,33 @@ export default function Settings() {
   });
 
   // ── Auto-save hooks ───────────────────────────────────────────────────────
+  const savePersonal = useCallback(
+    (data) => {
+      if (ownerUserId) return updateUser(ownerUserId, data);
+      return updateMe(data);
+    },
+    [ownerUserId],
+  );
+
   const { status: personalStatus } = useAutoSave(
     personal,
-    (data) => updateMe(data),
-    { enabled: ready },
+    savePersonal,
+    {
+      enabled:
+        ready
+        && (!adminCompany?.accountId || !!ownerUserId),
+    },
   );
 
   const { status: companyStatus } = useAutoSave(
     company,
     (data) => updateMyAccount(data),
-    { enabled: ready },
+    { enabled: ready && !doctorLimited },
   );
 
   const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState(null);
+  const LOGO_MAX_BYTES = 5 * 1024 * 1024;
   const [migrating, setMigrating] = useState(false);
   const logoInputRef = useRef(null);
 
@@ -81,12 +103,13 @@ export default function Settings() {
   const { status: graftStatus } = useAutoSave(
     optionsData.graftButtons,
     (graftButtons) => updateOptions({ graftButtons }),
-    { delay: 400, enabled: ready && optionsReady },
+    { delay: 400, enabled: ready && optionsReady && !doctorLimited },
   );
 
   // ── Seed personal from auth context ──────────────────────────────────────
   useEffect(() => {
-    if (user) {
+    if (user && !adminCompany?.accountId) {
+      setOwnerUserId(null);
       setPersonal({
         username:  user.username  || '',
         firstName: user.firstName || '',
@@ -95,10 +118,14 @@ export default function Settings() {
         phone:     user.phone     || '',
       });
     }
-  }, [user]);
+  }, [user, adminCompany?.accountId]);
 
   // ── Load company from API ─────────────────────────────────────────────────
   const loadSettings = useCallback(async () => {
+    if (doctorLimited && !adminCompany?.accountId) {
+      setReady(true);
+      return;
+    }
     try {
       const data = await getSettings();
       if (data) {
@@ -108,13 +135,23 @@ export default function Settings() {
         } = data;
         const resolvedAddress = address || [street, city, state, zip].filter(Boolean).join(', ');
         setCompany({ practiceName, logoUrl, website, email, phone, address: resolvedAddress });
+        if (adminCompany?.accountId && data.owner?.id) {
+          setOwnerUserId(data.owner.id);
+          setPersonal({
+            username: data.owner.username || '',
+            firstName: data.owner.firstName || '',
+            lastName: data.owner.lastName || '',
+            email: data.owner.email || '',
+            phone: data.owner.phone || '',
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load settings', err);
     } finally {
       setReady(true);
     }
-  }, []);
+  }, [adminCompany?.accountId, doctorLimited]);
 
   // ── Load options + graft buttons from API ─────────────────────────────────
   const loadOptions = useCallback(async () => {
@@ -142,7 +179,10 @@ export default function Settings() {
   }, []);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
-  useEffect(() => { loadOptions(); }, [loadOptions]);
+  useEffect(() => {
+    if (doctorLimited) return;
+    loadOptions();
+  }, [loadOptions, doctorLimited]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handlePersonalChange = (e) => setPersonal((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -165,17 +205,46 @@ export default function Settings() {
   const handleLogoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setLogoError(null);
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError(S.logoTooLarge);
+      e.target.value = '';
+      return;
+    }
     setLogoUploading(true);
     try {
       const url = await uploadLogo(file);
       setCompany((c) => ({ ...c, logoUrl: url }));
     } catch (err) {
       console.error('Failed to upload logo', err);
+      const serverMsg = err.response?.data?.error;
+      setLogoError(typeof serverMsg === 'string' ? serverMsg : S.logoUploadFailed);
     } finally {
       setLogoUploading(false);
       e.target.value = '';
     }
   };
+
+  const adminOnlyNoClinic =
+    user?.roles?.includes('admin')
+    && !user?.roles?.includes('accountOwner')
+    && !adminCompany?.accountId;
+
+  if (adminOnlyNoClinic) {
+    return (
+      <Box>
+        <PageHeader title={S.settingsTitle} />
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+            {S.settingsAdminUseClinicsList}
+          </Typography>
+          <Button component={Link} to="/admin/accounts" variant="contained">
+            {S.accounts}
+          </Button>
+        </Paper>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -204,33 +273,36 @@ export default function Settings() {
           <Grid item xs={12} sm={6}>
             <TextField label={S.phone} name="phone" fullWidth value={personal.phone} onChange={handlePersonalChange} />
           </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              label={S.password}
-              type="password"
-              fullWidth
-              value="••••••••••••"
-              disabled
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={handleOpenResetPassword}
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      {S.resetButton}
-                    </Button>
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Grid>
+          {!adminCompany?.accountId && (
+            <Grid item xs={12} sm={6}>
+              <TextField
+                label={S.password}
+                type="password"
+                fullWidth
+                value="••••••••••••"
+                disabled
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={handleOpenResetPassword}
+                        sx={{ whiteSpace: 'nowrap' }}
+                      >
+                        {S.resetButton}
+                      </Button>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Grid>
+          )}
         </Grid>
       </Section>
 
       {/* ── Company ─────────────────────────────────────────────────────── */}
+      {!doctorLimited && (
       <Section title={S.companyTitle} description={S.companyDescription} saveStatus={companyStatus}>
         <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
 
@@ -265,37 +337,97 @@ export default function Settings() {
               {S.clinicLogo}
             </Typography>
             <Box
-              onClick={() => !logoUploading && logoInputRef.current?.click()}
+              onClick={() => {
+                if (!ready || logoUploading) return;
+                logoInputRef.current?.click();
+              }}
               sx={{
                 width: '100%',
-                minHeight: 140,
+                height: 200,
+                boxSizing: 'border-box',
                 bgcolor: 'background.paper',
                 border: '2px dashed',
-                borderColor: 'grey.400',
+                borderColor: logoError ? 'error.light' : 'grey.400',
                 borderRadius: 2,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
-                cursor: logoUploading ? 'wait' : 'pointer',
+                px: 2,
+                py: 2,
+                cursor: !ready || logoUploading ? 'default' : 'pointer',
                 transition: 'border-color 0.2s, background-color 0.2s',
-                '&:hover': logoUploading ? {} : { borderColor: 'grey.600', bgcolor: 'grey.50' },
+                '&:hover':
+                  !ready || logoUploading
+                    ? {}
+                    : { borderColor: logoError ? 'error.main' : 'grey.600', bgcolor: 'grey.50' },
               }}
             >
-              {company.logoUrl ? (
-                <Box
-                  component="img"
-                  src={company.logoUrl}
-                  alt={S.practiceLogoAlt}
-                  sx={{ width: '100%', height: '100%', objectFit: 'contain', p: 2 }}
-                />
+              {!ready ? (
+                <>
+                  <CircularProgress size={40} />
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                    {S.loading}
+                  </Typography>
+                </>
               ) : logoUploading ? (
-                <Typography variant="body2" color="text.secondary">{S.uploadingLogo}</Typography>
+                <>
+                  <CircularProgress size={40} />
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+                    {S.uploadingLogo}
+                  </Typography>
+                </>
+              ) : logoError ? (
+                <>
+                  <ErrorOutlineIcon sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+                  <Typography
+                    variant="body2"
+                    color="error"
+                    align="center"
+                    sx={{ wordBreak: 'break-word', maxWidth: '100%' }}
+                  >
+                    {logoError}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, textAlign: 'center' }}>
+                    {S.logoTapToRetry}
+                  </Typography>
+                </>
+              ) : company.logoUrl ? (
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={company.logoUrl}
+                    alt={S.practiceLogoAlt}
+                    sx={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain',
+                      objectPosition: 'center',
+                      display: 'block',
+                    }}
+                  />
+                </Box>
               ) : (
                 <>
                   <CloudUploadIcon sx={{ fontSize: 48, color: 'grey.500', mb: 1 }} />
-                  <Typography variant="body2" color="text.secondary">{S.logoFileTypes}</Typography>
+                  <Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ mb: 0.5 }}>
+                    {S.logoNoLogoYet}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" align="center">
+                    {S.logoFileTypes}
+                  </Typography>
                 </>
               )}
             </Box>
@@ -306,12 +438,11 @@ export default function Settings() {
               style={{ display: 'none' }}
               onChange={handleLogoUpload}
             />
-            {company.logoUrl && (
+            {ready && company.logoUrl && !logoUploading && !logoError && (
               <Button
                 variant="outlined"
                 size="small"
                 onClick={() => logoInputRef.current?.click()}
-                disabled={logoUploading}
                 sx={{ mt: 1.5 }}
               >
                 {S.updateLogo}
@@ -321,8 +452,10 @@ export default function Settings() {
 
         </Box>
       </Section>
+      )}
 
       {/* ── Application Settings ─────────────────────────────────────────── */}
+      {!doctorLimited && (
       <Section title={S.applicationTitle} description={S.applicationDescription} saveStatus={graftStatus}>
         <ApplicationSettingsEditor
           mode="account"
@@ -333,11 +466,14 @@ export default function Settings() {
           migrating={migrating}
         />
       </Section>
+      )}
 
-      <ResetOwnPasswordModal
-        open={resetPasswordOpen}
-        onClose={() => setResetPasswordOpen(false)}
-      />
+      {!adminCompany?.accountId && (
+        <ResetOwnPasswordModal
+          open={resetPasswordOpen}
+          onClose={() => setResetPasswordOpen(false)}
+        />
+      )}
     </Box>
   );
 }

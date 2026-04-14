@@ -19,7 +19,7 @@ import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
-const COLUMNS = ['Name', 'Role', 'Email', 'Last Active', ''];
+const COLUMNS = [S.name, S.username, S.role, S.email, S.lastActive, ''];
 
 const ROLES = [
   { value: 'technician', label: 'Technician' },
@@ -192,9 +192,10 @@ export default function Team() {
 
   const filtered = users.filter((u) => {
     const name  = `${u.firstName || ''} ${u.lastName || ''}`.trim().toLowerCase();
+    const uname = (u.username || '').toLowerCase();
     const email = (u.email || '').toLowerCase();
     const q     = search.toLowerCase();
-    const matchesSearch = name.includes(q) || email.includes(q);
+    const matchesSearch = name.includes(q) || uname.includes(q) || email.includes(q);
     const matchesRole =
       roleFilter === 'all' ||
       (roleFilter === 'doctor'     && (u.roles || []).includes('doctor')) ||
@@ -263,6 +264,9 @@ export default function Team() {
                       <Typography variant="body1" fontWeight={600}>
                         {[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}
                       </Typography>
+                    </TableCell>
+                    <TableCell onClick={() => setEditTarget(u)}>
+                      <Typography variant="body2" color="text.secondary">{u.username || '—'}</Typography>
                     </TableCell>
                     <TableCell onClick={() => setEditTarget(u)}>
                       <Typography variant="body2" color="text.secondary">{roleLabel(u.roles)}</Typography>

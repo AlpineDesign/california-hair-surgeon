@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box, Button, Typography, Paper, IconButton, Chip,
   Dialog, DialogTitle, DialogContent, DialogActions,
+  Divider,
   List, ListItem, ListItemText, ListItemSecondaryAction,
+  CircularProgress,
 } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CloseIcon from '@mui/icons-material/Close';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { useAuth } from '../../hooks/useAuth';
 import { getSurgery, getActivities, createActivity, updateActivity, deleteActivity, updateSurgery } from '../../api/surgeries';
@@ -14,8 +17,12 @@ import {
   getTechnicianDisplayName,
   formatStartedAt,
 } from '../../utils/surgery';
+import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
+import BulkAddModal from '../../components/BulkAddModal';
 import S from '../../strings';
+
+const LONG_PRESS_MS = 500;
 
 function formatTime(dateStr) {
   if (!dateStr) return '—';
@@ -50,6 +57,11 @@ function arrangeButtonsTriangular(buttons) {
   return rows;
 }
 
+/** Dimmed opacity while pending server; must match keyframe end state for slide-in. */
+const ACTIVITY_OPTIMISTIC_OPACITY = 0.48;
+/** Smooth fade when a row leaves optimistic state (and for any opacity change). */
+const ACTIVITY_OPACITY_TRANSITION = 'opacity 0.25s ease-in-out';
+
 export default function CountingInterface() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -58,7 +70,12 @@ export default function CountingInterface() {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editButtonsOpen, setEditButtonsOpen] = useState(false);
+  const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkModalInitialLabel, setBulkModalInitialLabel] = useState('');
   const [activityModal, setActivityModal] = useState(null);
+  const [activityEditLabel, setActivityEditLabel] = useState('');
+  const longPressTimerRef = useRef(null);
+  const longPressConsumedRef = useRef(false);
 
   const fetchSurgery = useCallback(async () => {
     if (!id) return;
@@ -84,6 +101,11 @@ export default function CountingInterface() {
 
   useEffect(() => { fetchSurgery(); }, [fetchSurgery]);
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
+  useEffect(() => {
+    if (activityModal) {
+      setActivityEditLabel(activityModal.payload?.label ?? '');
+    }
+  }, [activityModal]);
 
   const graftButtons = surgery?.graftButtons ?? [];
   const myUserId = user?.id || user?.objectId;
@@ -98,20 +120,70 @@ export default function CountingInterface() {
   const handleBack = () => navigate('/remote/surgeries');
 
   const handleButtonClick = async (btn) => {
-    if (!id) return;
+    if (!id || extractionCompleted) return;
+    triggerLightHaptic();
+
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const nowIso = new Date().toISOString();
+    const payload = {
+      label: btn.label,
+      intactHairs: btn.intactHairs ?? 0,
+      totalHairs: btn.totalHairs ?? 1,
+    };
+    const optimisticActivity = {
+      id: optimisticId,
+      objectId: optimisticId,
+      _clientKey: optimisticId,
+      action: 'extraction',
+      payload,
+      createdAt: nowIso,
+      userId: myUserId,
+      user: {
+        id: myUserId,
+        firstName: user?.firstName,
+        lastName: user?.lastName,
+        username: user?.username,
+      },
+      _optimistic: true,
+    };
+
+    setActivities((prev) => [optimisticActivity, ...prev]);
+
     try {
       const res = await createActivity(id, {
         action: 'extraction',
-        payload: { label: btn.label, intactHairs: btn.intactHairs ?? 0, totalHairs: btn.totalHairs ?? 1 },
+        payload,
       });
       if (res.surgery) setSurgery(res.surgery);
-      if (res.activity) {
-        const newActivity = { ...res.activity, user: { id: myUserId }, userId: myUserId, action: 'extraction' };
-        setActivities((prev) => [newActivity, ...prev.filter((a) => (a.id || a.objectId) !== (res.activity?.id || res.activity?.objectId))]);
+      const serverAct = res.activity;
+      if (serverAct) {
+        const rid = serverAct.id || serverAct.objectId;
+        const newActivity = {
+          ...serverAct,
+          _clientKey: optimisticId,
+          user: {
+            id: myUserId,
+            firstName: user?.firstName,
+            lastName: user?.lastName,
+            username: user?.username,
+          },
+          userId: myUserId,
+          action: 'extraction',
+          _optimistic: false,
+        };
+        setActivities((prev) => {
+          const without = prev.filter((a) => {
+            const aid = a.id || a.objectId;
+            return aid !== optimisticId && aid !== rid;
+          });
+          return [newActivity, ...without];
+        });
+      } else {
+        await fetchActivities();
       }
-      await fetchActivities();
     } catch (err) {
       console.error('Failed to create activity', err);
+      setActivities((prev) => prev.filter((a) => (a.id || a.objectId) !== optimisticId));
     }
   };
 
@@ -160,6 +232,121 @@ export default function CountingInterface() {
     }
   };
 
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleGraftPointerDown = (btn) => () => {
+    if (extractionCompleted) return;
+    longPressConsumedRef.current = false;
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      longPressConsumedRef.current = true;
+      triggerLightHaptic();
+      setBulkModalInitialLabel(btn.label);
+      setBulkModalOpen(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleGraftPointerUp = (btn) => () => {
+    clearLongPressTimer();
+    if (extractionCompleted) return;
+    if (longPressConsumedRef.current) {
+      longPressConsumedRef.current = false;
+      return;
+    }
+    handleButtonClick(btn);
+  };
+
+  const handleGraftPointerLeave = () => {
+    clearLongPressTimer();
+  };
+
+  const handleBulkSave = (count, btn) => {
+    if (!id || extractionCompleted) {
+      throw new Error('skip');
+    }
+    triggerLightHaptic();
+    const payload = {
+      label: btn.label,
+      intactHairs: btn.intactHairs ?? 0,
+      totalHairs: btn.totalHairs ?? 1,
+    };
+    const baseTime = Date.now();
+    const optimisticActivities = [];
+    for (let i = 0; i < count; i++) {
+      const optimisticId = `optimistic-${baseTime}-${i}-${Math.random().toString(36).slice(2, 9)}`;
+      const nowIso = new Date(baseTime + i).toISOString();
+      optimisticActivities.push({
+        id: optimisticId,
+        objectId: optimisticId,
+        _clientKey: optimisticId,
+        action: 'extraction',
+        payload,
+        createdAt: nowIso,
+        userId: myUserId,
+        user: {
+          id: myUserId,
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          username: user?.username,
+        },
+        _optimistic: true,
+      });
+    }
+    setActivities((prev) => [...optimisticActivities, ...prev]);
+
+    void (async () => {
+      let didRefetchForMissingActivity = false;
+      await Promise.all(
+        optimisticActivities.map(async (opt) => {
+          const optimisticId = opt._clientKey;
+          try {
+            const res = await createActivity(id, {
+              action: 'extraction',
+              payload,
+            });
+            if (res?.surgery) setSurgery(res.surgery);
+            const serverAct = res?.activity;
+            if (serverAct) {
+              const rid = serverAct.id || serverAct.objectId;
+              const newActivity = {
+                ...serverAct,
+                _clientKey: optimisticId,
+                user: {
+                  id: myUserId,
+                  firstName: user?.firstName,
+                  lastName: user?.lastName,
+                  username: user?.username,
+                },
+                userId: myUserId,
+                action: 'extraction',
+                _optimistic: false,
+              };
+              setActivities((prev) => {
+                const without = prev.filter((a) => {
+                  const aid = a.id || a.objectId;
+                  return aid !== optimisticId && aid !== rid;
+                });
+                return [newActivity, ...without];
+              });
+            } else if (!didRefetchForMissingActivity) {
+              didRefetchForMissingActivity = true;
+              await fetchActivities();
+            }
+          } catch (err) {
+            console.error('Bulk add item failed', err);
+            setActivities((prev) => prev.filter((a) => (a.id || a.objectId) !== optimisticId));
+          }
+        })
+      );
+    })();
+  };
+
   const extractionCompleted = !!surgery?.extraction?.completedAt;
   const placementCompleted = !!surgery?.placement?.completedAt;
   const myActivities = activities.filter((a) => {
@@ -170,7 +357,7 @@ export default function CountingInterface() {
   if (loading || !surgery) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        <Typography color="text.secondary">Loading…</Typography>
+        <CircularProgress size={40} />
       </Box>
     );
   }
@@ -205,14 +392,28 @@ export default function CountingInterface() {
             {patientLabel}
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          size="small"
-          onClick={() => setEditButtonsOpen(true)}
-          sx={{ textTransform: 'none' }}
-        >
-          {S.editButtons}
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            disabled={extractionCompleted || activeButtons.length === 0}
+            onClick={() => {
+              setBulkModalInitialLabel('');
+              setBulkModalOpen(true);
+            }}
+            sx={{ textTransform: 'none' }}
+          >
+            {S.bulkAdd}
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={() => setEditButtonsOpen(true)}
+            sx={{ textTransform: 'none' }}
+          >
+            {S.editButtons}
+          </Button>
+        </Box>
       </Box>
 
       {/* Main content: buttons left, summary + activity right */}
@@ -244,13 +445,22 @@ export default function CountingInterface() {
                       variant="contained"
                       color="primary"
                       disabled={extractionCompleted}
-                      onClick={() => handleButtonClick(btn)}
+                      onPointerDown={handleGraftPointerDown(btn)}
+                      onPointerUp={handleGraftPointerUp(btn)}
+                      onPointerLeave={handleGraftPointerLeave}
+                      onPointerCancel={handleGraftPointerLeave}
                       sx={{
                         minWidth: 175,
                         height: 175,
                         fontSize: '3.2rem',
                         fontWeight: 700,
                         borderRadius: 2,
+                        transition: 'opacity 0.07s ease, transform 0.07s ease',
+                        willChange: 'opacity, transform',
+                        '&:active': {
+                          opacity: 0.82,
+                          transform: 'scale(0.97)',
+                        },
                       }}
                     >
                       <Box component="span" sx={{ display: 'inline-flex', alignItems: 'baseline' }}>
@@ -331,9 +541,12 @@ export default function CountingInterface() {
                 pl: 2,
                 pr: 0.5,
                 pb: 2,
-                '@keyframes slideIn': {
-                  from: { opacity: 0, transform: 'translateY(-12px)' },
-                  to: { opacity: 1, transform: 'translateY(0)' },
+                '@keyframes activityRowSlideIn': {
+                  from: { opacity: 0, transform: 'translateY(-10px)' },
+                  to: {
+                    opacity: ACTIVITY_OPTIMISTIC_OPACITY,
+                    transform: 'translateY(0)',
+                  },
                 },
               }}
             >
@@ -344,21 +557,33 @@ export default function CountingInterface() {
               ) : (
                 myActivities.map((a) => (
                   <ListItem
-                    key={a.id ?? a.objectId ?? `${a.payload?.label}-${a.createdAt}`}
+                    key={a._clientKey ?? a.id ?? a.objectId ?? `${a.payload?.label}-${a.createdAt}`}
                     dense
-                    onClick={() => a.action === 'extraction' && !extractionCompleted && setActivityModal(a)}
+                    onClick={() => a.action === 'extraction' && !extractionCompleted && !a._optimistic && setActivityModal(a)}
                     sx={{
-                      cursor: a.action === 'extraction' && !extractionCompleted ? 'pointer' : 'default',
+                      cursor:
+                        a.action === 'extraction' && !extractionCompleted && !a._optimistic ? 'pointer' : 'default',
                       py: 0.5,
                       px: 0,
                       borderBottom: '1px solid',
                       borderColor: 'divider',
                       '&:last-child': { borderBottom: 'none' },
-                      animation: 'slideIn 0.25s ease-out',
-                      '&:hover': a.action === 'extraction' && !extractionCompleted ? { bgcolor: 'action.hover' } : {},
+                      transition: ACTIVITY_OPACITY_TRANSITION,
+                      ...(a._optimistic
+                        ? {
+                            animation: 'activityRowSlideIn 0.22s ease-out forwards',
+                          }
+                        : {
+                            animation: 'none',
+                            opacity: 1,
+                          }),
+                      '&:hover':
+                        a.action === 'extraction' && !extractionCompleted && !a._optimistic
+                          ? { bgcolor: 'action.hover' }
+                          : {},
                     }}
                     secondaryAction={
-                      a.action === 'extraction' && !extractionCompleted && (
+                      a.action === 'extraction' && !extractionCompleted && !a._optimistic && (
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); setActivityModal(a); }}>
                           <MoreVertIcon fontSize="small" />
                         </IconButton>
@@ -397,19 +622,25 @@ export default function CountingInterface() {
         </Box>
       </Box>
 
-      {/* Activity edit modal — pill list + delete */}
+      {/* Activity edit modal — pill list + footer actions */}
       <Dialog open={!!activityModal} onClose={() => setActivityModal(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>{S.correctGraftType}</DialogTitle>
-        <DialogContent>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
+          {S.correctGraftType}
+          <IconButton onClick={() => setActivityModal(null)} size="small" aria-label={S.cancel}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <Divider />
+        <DialogContent sx={{ pt: 2 }}>
           {activityModal && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
               {(graftButtons || []).map((btn) => (
                 <Chip
                   key={btn.label}
                   label={btn.label}
-                  onClick={() => handleActivityEdit(btn.label)}
-                  color={activityModal.payload?.label === btn.label ? 'primary' : 'default'}
-                  variant={activityModal.payload?.label === btn.label ? 'filled' : 'outlined'}
+                  onClick={() => setActivityEditLabel(btn.label)}
+                  color={activityEditLabel === btn.label ? 'primary' : 'default'}
+                  variant={activityEditLabel === btn.label ? 'filled' : 'outlined'}
                   sx={{
                     cursor: 'pointer',
                     fontSize: '1.5rem',
@@ -421,13 +652,36 @@ export default function CountingInterface() {
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, flexDirection: 'column', alignItems: 'stretch' }}>
-          <Button color="error" onClick={handleActivityDelete} sx={{ order: 2 }}>
-            {S.remove}
+        <Divider />
+        <DialogActions
+          sx={{
+            px: 3,
+            py: 2,
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Button color="error" onClick={handleActivityDelete}>
+            {S.delete}
           </Button>
-          <Button onClick={() => setActivityModal(null)}>{S.cancel}</Button>
+          <Button variant="contained" onClick={() => handleActivityEdit(activityEditLabel)}>
+            {S.update}
+          </Button>
         </DialogActions>
       </Dialog>
+
+      <BulkAddModal
+        open={bulkModalOpen}
+        onClose={() => {
+          setBulkModalOpen(false);
+          setBulkModalInitialLabel('');
+        }}
+        buttons={activeButtons}
+        initialLabel={bulkModalInitialLabel}
+        onSave={handleBulkSave}
+      />
 
       {editButtonsOpen && (
         <EditTechnicianButtonsModal

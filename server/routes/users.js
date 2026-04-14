@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
 const requireRole  = require('../middleware/roles');
+const { toId } = require('../middleware/accountScope');
 
 const TEAM_ROLES = ['technician', 'doctor', 'user']; // 'user' kept for backward compat
 
@@ -52,7 +53,7 @@ router.get('/', async (req, res) => {
       ? req.query.accountId
       : req.user.accountId;
     if (!accountId) return res.status(403).json({ error: 'Forbidden' });
-    if (!req.user.roles?.includes('admin') && !req.user.roles?.includes('accountOwner')) {
+    if (!req.user.roles?.includes('admin') && !req.user.roles?.includes('accountOwner') && !req.user.roles?.includes('doctor')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const query = new Parse.Query(Parse.User);
@@ -91,12 +92,16 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /api/users/:id — edit team member (incl. password reset by account owner)
+// PATCH /api/users/:id — edit team member (incl. password reset by account owner); admin with X-Scope-Account-Id
 router.patch('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Parse.User);
     const user = await query.get(req.params.id, { useMasterKey: true });
-    if (user.get('accountId') !== req.user.accountId) return res.status(403).json({ error: 'Forbidden' });
+    const userAid = toId(user.get('accountId'));
+    const isOwner = req.user.roles?.includes('accountOwner') && toId(req.user.accountId) === userAid;
+    const scopeHeader = req.headers['x-scope-account-id']?.trim();
+    const isAdminScoped = req.user.roles?.includes('admin') && scopeHeader && scopeHeader === userAid;
+    if (!isOwner && !isAdminScoped) return res.status(403).json({ error: 'Forbidden' });
     const { firstName, lastName, username, email, role, password } = req.body;
     if (firstName !== undefined) user.set('firstName', firstName);
     if (lastName  !== undefined) user.set('lastName',  lastName);
