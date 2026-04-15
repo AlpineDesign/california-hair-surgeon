@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography, Link as MuiLink,
+  TableHead, TableRow, Typography,
 } from '@mui/material';
-import { Link, useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { getSurgeries } from '../../api/surgeries';
 import { useAdminCompany } from '../../contexts/AdminCompanyContext';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
@@ -16,9 +16,10 @@ import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
 const POLL_INTERVAL_MS = 5000;
-const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions];
+const COLUMNS = [S.patient, S.date, S.grafts, S.goal];
 
 export default function CompanySurgeries() {
+  const navigate = useNavigate();
   const { accountId } = useParams();
   const adminCompany = useAdminCompany();
   const [surgeries, setSurgeries] = useState([]);
@@ -83,8 +84,15 @@ export default function CompanySurgeries() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((s) => (
-                  <TableRow key={s.id || s.objectId} hover>
+                filtered.map((s) => {
+                  const sid = s.id || s.objectId;
+                  return (
+                  <TableRow
+                    key={sid}
+                    hover
+                    onClick={() => navigate(`${basePath}/surgeries/${sid}`, { state: { backTo: basePath } })}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography variant="body1" fontWeight={600}>
@@ -102,33 +110,9 @@ export default function CompanySurgeries() {
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
                     </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', gap: 2 }}>
-                        {s.status === 'completed' ? (
-                          <MuiLink
-                            component={Link}
-                            to={`${basePath}/surgeries/${s.id || s.objectId}?report=1`}
-                            state={{ backTo: basePath }}
-                            variant="body2"
-                            fontWeight={600}
-                          >
-                            {S.report}
-                          </MuiLink>
-                        ) : (
-                          <MuiLink
-                            component={Link}
-                            to={`${basePath}/surgeries/${s.id || s.objectId}`}
-                            state={{ backTo: basePath }}
-                            variant="body2"
-                            fontWeight={600}
-                          >
-                            {S.dashboard}
-                          </MuiLink>
-                        )}
-                      </Box>
-                    </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

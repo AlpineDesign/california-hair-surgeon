@@ -1,4 +1,4 @@
-import { Box, Typography, Button } from '@mui/material';
+import { Box } from '@mui/material';
 import GraftButtonRow from './GraftButtonRow';
 import SettingRow from './SettingRow';
 import S from '../strings';
@@ -25,8 +25,6 @@ const APP_SETTINGS_FIELDS = [
  *   onDataChange   (key, value) => void — for defaults mode
  *   onGraftChange  (graftButtons) => void — for account mode (graft buttons only)
  *   onRefetch      () => void — for account mode (after option edits)
- *   onMigrate      () => void — account mode only, when no options
- *   migrating      boolean — account mode only
  */
 export default function ApplicationSettingsEditor({
   mode,
@@ -34,8 +32,6 @@ export default function ApplicationSettingsEditor({
   onDataChange,
   onGraftChange,
   onRefetch,
-  onMigrate,
-  migrating = false,
 }) {
   const isDefaults = mode === 'defaults';
   const graftButtons = data.graftButtons || [];
@@ -45,20 +41,8 @@ export default function ApplicationSettingsEditor({
     else onGraftChange?.(btns);
   };
 
-  const hasAnyOptions = APP_SETTINGS_FIELDS.some(({ key }) => (data[key]?.length ?? 0) > 0);
-
   return (
     <Box>
-      {!isDefaults && !hasAnyOptions && (
-        <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            {S.migrateHelper}
-          </Typography>
-          <Button variant="outlined" size="small" onClick={onMigrate} disabled={migrating}>
-            {migrating ? S.migrating : S.migrateButton}
-          </Button>
-        </Box>
-      )}
       <Box sx={{ mx: -2.5, mt: -1.75 }}>
         {APP_SETTINGS_FIELDS.filter((f) => !isDefaults || f.showInDefaults !== false).map(({ key, type, label }) => (
           <SettingRow

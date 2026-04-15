@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, IconButton,
   Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Typography,
+  CircularProgress,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import { useAuth } from '../hooks/useAuth';
@@ -67,7 +68,9 @@ export default function TechnicianReportModal({ surgery, open, onClose }) {
       </DialogTitle>
       <DialogContent>
         {loading ? (
-          <Typography color="text.secondary">Loading…</Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 6 }}>
+            <CircularProgress size={40} />
+          </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {/* Graft Counting Summary */}

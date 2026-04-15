@@ -17,7 +17,7 @@ import TableLoader from '../../components/TableLoader';
 import RowMenu from '../../components/RowMenu';
 import ResetPasswordModal from '../../components/ResetPasswordModal';
 import { formatDate } from '../../utils/surgery';
-import S from '../../strings';
+import S, { format } from '../../strings';
 
 const COLUMNS = [S.name, S.username, S.role, S.email, S.lastActive, ''];
 
@@ -27,9 +27,10 @@ const ROLES = [
 ];
 
 function roleLabel(roles = []) {
-  if (roles.includes('doctor')) return 'Doctor';
-  if (roles.includes('technician')) return 'Technician';
-  return 'Technician'; // backward compat with legacy 'user' role
+  if (roles.includes('accountOwner')) return S.roleOwner;
+  if (roles.includes('doctor')) return S.doctor;
+  if (roles.includes('technician')) return S.technician;
+  return S.technician;
 }
 
 
@@ -196,10 +197,13 @@ export default function Team() {
     const email = (u.email || '').toLowerCase();
     const q     = search.toLowerCase();
     const matchesSearch = name.includes(q) || uname.includes(q) || email.includes(q);
+    const roles = u.roles || [];
+    const isDoctor = roles.includes('doctor');
+    const isTechnician = roles.includes('technician') || roles.includes('user');
     const matchesRole =
       roleFilter === 'all' ||
-      (roleFilter === 'doctor'     && (u.roles || []).includes('doctor')) ||
-      (roleFilter === 'technician' && !(u.roles || []).includes('doctor'));
+      (roleFilter === 'doctor' && isDoctor) ||
+      (roleFilter === 'technician' && isTechnician && !isDoctor);
     return matchesSearch && matchesRole;
   });
 
@@ -254,41 +258,51 @@ export default function Team() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((u) => (
+                filtered.map((u) => {
+                  const isOwner = (u.roles || []).includes('accountOwner');
+                  const openEdit = () => { if (!isOwner) setEditTarget(u); };
+                  return (
                   <TableRow
                     key={u.id || u.objectId}
                     hover
-                    sx={{ cursor: 'pointer' }}
+                    sx={{ cursor: isOwner ? 'default' : 'pointer' }}
                   >
-                    <TableCell onClick={() => setEditTarget(u)}>
+                    <TableCell onClick={openEdit}>
                       <Typography variant="body1" fontWeight={600}>
                         {[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username}
                       </Typography>
                     </TableCell>
-                    <TableCell onClick={() => setEditTarget(u)}>
+                    <TableCell onClick={openEdit}>
                       <Typography variant="body2" color="text.secondary">{u.username || '—'}</Typography>
                     </TableCell>
-                    <TableCell onClick={() => setEditTarget(u)}>
+                    <TableCell onClick={openEdit}>
                       <Typography variant="body2" color="text.secondary">{roleLabel(u.roles)}</Typography>
                     </TableCell>
-                    <TableCell onClick={() => setEditTarget(u)}>
+                    <TableCell onClick={openEdit}>
                       <Typography variant="body2" color="text.secondary">{u.email || '—'}</Typography>
                     </TableCell>
-                    <TableCell onClick={() => setEditTarget(u)}>
+                    <TableCell onClick={openEdit}>
                       <Typography variant="body2">{formatDate(u.lastActiveAt)}</Typography>
                     </TableCell>
                     <TableCell align="right" width={48} onClick={(e) => e.stopPropagation()}>
                       <RowMenu
-                        onDelete={() => handleDelete(u.id || u.objectId)}
-                        confirmMessage={`Remove ${[u.firstName, u.lastName].filter(Boolean).join(' ') || u.username} from the team?`}
-                        extraItems={[
-                          { label: 'Edit', icon: <EditIcon fontSize="small" />, onClick: () => setEditTarget(u) },
-                          { label: S.resetPassword, icon: <LockResetIcon fontSize="small" />, onClick: () => setResetPasswordTarget(u) },
-                        ]}
+                        onDelete={isOwner ? undefined : () => handleDelete(u.id || u.objectId)}
+                        confirmMessage={format(S.removeFromTeamConfirm, {
+                          name: [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username,
+                        })}
+                        extraItems={
+                          isOwner
+                            ? [{ label: S.resetPassword, icon: <LockResetIcon fontSize="small" />, onClick: () => setResetPasswordTarget(u) }]
+                            : [
+                                { label: S.edit, icon: <EditIcon fontSize="small" />, onClick: () => setEditTarget(u) },
+                                { label: S.resetPassword, icon: <LockResetIcon fontSize="small" />, onClick: () => setResetPasswordTarget(u) },
+                              ]
+                        }
                       />
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

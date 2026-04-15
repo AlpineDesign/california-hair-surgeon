@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography, Link as MuiLink, Tabs, Tab,
+  TableHead, TableRow, Typography, Tabs, Tab,
 } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getSurgeries } from '../../api/surgeries';
 import PageHeader from '../../components/PageHeader';
@@ -24,9 +24,9 @@ function getGreeting(firstName) {
   return `${time}${firstName ? ` ${firstName}` : ''}`;
 }
 
-const ACTIVE_COLS = [S.patient, S.extractionStarted, S.placingStarted, S.grafts, ''];
+const ACTIVE_COLS = [S.patient, S.extractionStarted, S.placingStarted, S.grafts];
 
-function ActiveSurgeriesTable({ surgeries, loading, onNew }) {
+function ActiveSurgeriesTable({ surgeries, loading, onNew, onRowClick }) {
   if (loading) {
     return (
       <TableContainer>
@@ -52,8 +52,15 @@ function ActiveSurgeriesTable({ surgeries, loading, onNew }) {
           </TableRow>
         </TableHead>
         <TableBody>
-          {surgeries.map((s) => (
-            <TableRow key={s.id || s.objectId} hover>
+          {surgeries.map((s) => {
+            const sid = s.id || s.objectId;
+            return (
+            <TableRow
+              key={sid}
+              hover
+              onClick={() => onRowClick(sid)}
+              sx={{ cursor: 'pointer' }}
+            >
               <TableCell>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="body1" fontWeight={600}>{s.patient?.initials || '—'}</Typography>
@@ -69,22 +76,18 @@ function ActiveSurgeriesTable({ surgeries, loading, onNew }) {
               <TableCell sx={{ minWidth: 260 }}>
                 <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
               </TableCell>
-              <TableCell align="right">
-                <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                  {S.dashboard}
-                </MuiLink>
-              </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </TableContainer>
   );
 }
 
-const UPCOMING_PAST_COLS = [S.patient, S.date, S.grafts, S.goal, S.actions];
+const UPCOMING_PAST_COLS = [S.patient, S.date, S.grafts, S.goal];
 
-function SurgeriesTable({ surgeries, emptyMessage, showReport, onNew }) {
+function SurgeriesTable({ surgeries, emptyMessage, onNew, onRowClick }) {
   if (!surgeries.length) {
     return <EmptyState icon={<MedicalServicesIcon />} message={emptyMessage} action={S.newSurgery} onAction={onNew} />;
   }
@@ -101,8 +104,15 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, onNew }) {
           </TableRow>
         </TableHead>
         <TableBody>
-          {surgeries.map((s) => (
-            <TableRow key={s.id || s.objectId} hover>
+          {surgeries.map((s) => {
+            const sid = s.id || s.objectId;
+            return (
+            <TableRow
+              key={sid}
+              hover
+              onClick={() => onRowClick(sid)}
+              sx={{ cursor: 'pointer' }}
+            >
               <TableCell>
                 <Typography variant="body1" fontWeight={600}>{s.patient?.initials || '—'}</Typography>
               </TableCell>
@@ -115,21 +125,9 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, onNew }) {
               <TableCell>
                 <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
               </TableCell>
-              <TableCell>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  {showReport ? (
-                    <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}?report=1`} variant="body2" fontWeight={600}>
-                      {S.report}
-                    </MuiLink>
-                  ) : (
-                    <MuiLink component={Link} to={`/dashboard/surgeries/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                      {S.dashboard}
-                    </MuiLink>
-                  )}
-                </Box>
-              </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </TableContainer>
@@ -137,6 +135,7 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, onNew }) {
 }
 
 export default function Home() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [surgeries, setSurgeries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +163,8 @@ export default function Home() {
   const past = surgeries.filter((s) => s.status === 'completed');
   const upcoming = surgeries.filter((s) => s.status !== 'active' && s.status !== 'completed');
 
+  const goToSurgery = (sid) => navigate(`/dashboard/surgeries/${sid}`);
+
   return (
     <Box>
       <PageHeader
@@ -175,7 +176,12 @@ export default function Home() {
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>{S.activeSurgeries}</Typography>
-        <ActiveSurgeriesTable surgeries={active} loading={loading} onNew={() => setModalOpen(true)} />
+        <ActiveSurgeriesTable
+          surgeries={active}
+          loading={loading}
+          onNew={() => setModalOpen(true)}
+          onRowClick={goToSurgery}
+        />
       </Paper>
 
       <Paper sx={{ p: 3 }}>
@@ -191,15 +197,15 @@ export default function Home() {
           <SurgeriesTable
             surgeries={upcoming}
             emptyMessage={S.emptyUpcomingSurgeries}
-            showReport={false}
             onNew={() => setModalOpen(true)}
+            onRowClick={goToSurgery}
           />
         ) : (
           <SurgeriesTable
             surgeries={past}
             emptyMessage={S.emptyPastSurgeries}
-            showReport
             onNew={() => setModalOpen(true)}
+            onRowClick={goToSurgery}
           />
         )}
       </Paper>

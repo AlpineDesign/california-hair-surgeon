@@ -11,7 +11,7 @@ import S from '../strings';
  * Reusable 3-dot row action menu.
  *
  * Props:
- *   onDelete        {function}  Called after the user confirms deletion.
+ *   onDelete        {function|undefined}  If omitted, the Delete menu item is hidden.
  *   confirmMessage  {string}    Optional custom confirmation message.
  *   extraItems      {Array}     Optional additional MenuItems before Delete.
  *                               Each: { label, icon, onClick }
@@ -32,7 +32,7 @@ export default function RowMenu({ onDelete, confirmMessage, extraItems = [] }) {
   const handleConfirm = (e) => {
     e.stopPropagation();
     setConfirm(false);
-    onDelete();
+    onDelete?.();
   };
 
   const handleCancel = (e) => {
@@ -62,12 +62,14 @@ export default function RowMenu({ onDelete, confirmMessage, extraItems = [] }) {
           </MenuItem>
         ))}
 
-        <MenuItem onClick={handleDeleteClick} sx={{ color: 'text.secondary' }}>
-          <ListItemIcon sx={{ color: 'text.secondary' }}>
-            <DeleteOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>{S.delete}</ListItemText>
-        </MenuItem>
+        {onDelete && (
+          <MenuItem onClick={handleDeleteClick} sx={{ color: 'text.secondary' }}>
+            <ListItemIcon sx={{ color: 'text.secondary' }}>
+              <DeleteOutlineIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>{S.delete}</ListItemText>
+          </MenuItem>
+        )}
       </Menu>
 
       <Dialog open={confirm} onClose={handleCancel} maxWidth="xs" fullWidth>

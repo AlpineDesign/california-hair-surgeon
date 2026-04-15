@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const { seedAccountFromDefaults } = require('../lib/seedAccount');
+const { touchLastActiveAt } = require('../lib/lastActiveAt');
 
 function userPayload(parseUser) {
   return {
@@ -22,6 +23,7 @@ router.post('/login', async (req, res) => {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
     const user = await Parse.User.logIn(username, password);
+    await touchLastActiveAt(user.id);
     res.json({ token: user.getSessionToken(), user: userPayload(user) });
   } catch (err) {
     res.status(401).json({ error: 'Invalid credentials' });
@@ -62,6 +64,7 @@ router.post('/signup', async (req, res) => {
 
     // 5. Log in to obtain a guaranteed valid session token
     const loggedIn = await Parse.User.logIn(username, password);
+    await touchLastActiveAt(loggedIn.id);
     res.status(201).json({ token: loggedIn.getSessionToken(), user: userPayload(loggedIn) });
   } catch (err) {
     const msg = err.code === 202 ? 'Username already taken' : (err.message || 'Signup failed');

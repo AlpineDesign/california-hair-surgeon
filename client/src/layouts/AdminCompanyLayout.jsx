@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Avatar, IconButton, Menu, MenuItem } from '@mui/material';
+import { Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText, Typography, Avatar, IconButton, Menu, MenuItem, CircularProgress } from '@mui/material';
 import LogoutIcon from '@mui/icons-material/Logout';
 import HomeIcon from '@mui/icons-material/Home';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
@@ -267,7 +267,9 @@ function AdminCompanyLayoutInner() {
         <Box component="main" sx={{ flex: 1, bgcolor: 'background.default' }}>
           <Box sx={{ flex: 1, p: 4 }}>
             {loading ? (
-              <Typography color="text.secondary">{S.loading}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '40vh' }}>
+                <CircularProgress size={40} />
+              </Box>
             ) : (
               <Outlet />
             )}

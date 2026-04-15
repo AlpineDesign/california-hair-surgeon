@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Paper, IconButton, Menu, MenuItem, List, ListItem, ListItemText,
   Select, FormControl, InputLabel, Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  CircularProgress,
 } from '@mui/material';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
@@ -143,8 +144,8 @@ export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractio
       </Box>
       <List dense sx={{ flex: 1, overflow: 'auto', py: 1 }}>
         {loading ? (
-          <ListItem>
-            <ListItemText primary={S.loading} />
+          <ListItem sx={{ justifyContent: 'center', py: 4 }}>
+            <CircularProgress size={40} />
           </ListItem>
         ) : activities.length === 0 ? (
           <ListItem>

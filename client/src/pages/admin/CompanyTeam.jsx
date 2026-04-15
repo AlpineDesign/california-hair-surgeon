@@ -15,9 +15,10 @@ import S from '../../strings';
 const COLUMNS = [S.name, S.username, S.role, S.email, S.lastActive];
 
 function roleLabel(roles = []) {
-  if (roles.includes('doctor')) return 'Doctor';
-  if (roles.includes('technician')) return 'Technician';
-  return 'Technician';
+  if (roles.includes('accountOwner')) return S.roleOwner;
+  if (roles.includes('doctor')) return S.doctor;
+  if (roles.includes('technician')) return S.technician;
+  return S.technician;
 }
 
 export default function CompanyTeam() {
@@ -50,10 +51,13 @@ export default function CompanyTeam() {
     const email = (u.email || '').toLowerCase();
     const q = search.toLowerCase();
     const matchesSearch = name.includes(q) || uname.includes(q) || email.includes(q);
+    const roles = u.roles || [];
+    const isDoctor = roles.includes('doctor');
+    const isTechnician = roles.includes('technician') || roles.includes('user');
     const matchesRole =
       roleFilter === 'all' ||
-      (roleFilter === 'doctor' && (u.roles || []).includes('doctor')) ||
-      (roleFilter === 'technician' && !(u.roles || []).includes('doctor'));
+      (roleFilter === 'doctor' && isDoctor) ||
+      (roleFilter === 'technician' && isTechnician && !isDoctor);
     return matchesSearch && matchesRole;
   });
 

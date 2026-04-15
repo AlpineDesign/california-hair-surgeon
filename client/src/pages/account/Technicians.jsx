@@ -138,7 +138,14 @@ export default function Technicians() {
   const fetchTechnicians = useCallback(async () => {
     try {
       const data = await getUsers();
-      setTechnicians(data);
+      const roles = (u) => u.roles || [];
+      setTechnicians(
+        data.filter(
+          (u) =>
+            (roles(u).includes('technician') || roles(u).includes('user')) &&
+            !roles(u).includes('accountOwner'),
+        ),
+      );
     } catch (err) {
       console.error('Failed to fetch technicians', err);
     } finally {

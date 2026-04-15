@@ -9,7 +9,6 @@ import useAutoSave from '../../hooks/useAutoSave';
 import { updateMe, updateUser } from '../../api/users';
 import { updateMyAccount, uploadLogo } from '../../api/accounts';
 import { getSettings, getOptions, updateOptions } from '../../api/settings';
-import { migrateOptions } from '../../api/options';
 import ResetOwnPasswordModal from '../../components/ResetOwnPasswordModal';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
@@ -96,7 +95,6 @@ export default function Settings() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoError, setLogoError] = useState(null);
   const LOGO_MAX_BYTES = 5 * 1024 * 1024;
-  const [migrating, setMigrating] = useState(false);
   const logoInputRef = useRef(null);
 
   const [optionsReady, setOptionsReady] = useState(false);
@@ -187,18 +185,6 @@ export default function Settings() {
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handlePersonalChange = (e) => setPersonal((p) => ({ ...p, [e.target.name]: e.target.value }));
   const handleCompanyChange  = (e) => setCompany((c)  => ({ ...c, [e.target.name]: e.target.value }));
-
-  const handleMigrate = async () => {
-    setMigrating(true);
-    try {
-      const result = await migrateOptions();
-      if (result?.migrated > 0) await loadOptions();
-    } catch (err) {
-      console.error('Migration failed', err);
-    } finally {
-      setMigrating(false);
-    }
-  };
 
   const handleOpenResetPassword = () => setResetPasswordOpen(true);
 
@@ -365,12 +351,7 @@ export default function Settings() {
               }}
             >
               {!ready ? (
-                <>
-                  <CircularProgress size={40} />
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    {S.loading}
-                  </Typography>
-                </>
+                <CircularProgress size={40} />
               ) : logoUploading ? (
                 <>
                   <CircularProgress size={40} />
@@ -462,8 +443,6 @@ export default function Settings() {
           data={optionsData}
           onGraftChange={(btns) => setOptionsData((s) => ({ ...s, graftButtons: btns }))}
           onRefetch={loadOptions}
-          onMigrate={handleMigrate}
-          migrating={migrating}
         />
       </Section>
       )}

@@ -224,13 +224,8 @@ export default function CountingInterface() {
       (c) => toUserId(c.userId) !== myUserId
     );
     configs.push({ userId: myUserId, labels });
-    try {
-      const result = await updateSurgery(id, { technicianButtonConfigs: configs });
-      setSurgery((prev) => mergeSurgeryPatch(prev, result));
-      setEditButtonsOpen(false);
-    } catch (err) {
-      console.error('Failed to save button config', err);
-    }
+    await updateSurgery(id, { technicianButtonConfigs: configs });
+    await fetchSurgery();
   };
 
   const clearLongPressTimer = () => {

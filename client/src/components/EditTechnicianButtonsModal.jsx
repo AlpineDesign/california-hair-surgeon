@@ -7,18 +7,17 @@ import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
 import S from '../strings';
 
-const chipSx = {
-  fontSize: '1rem',
-  fontWeight: 600,
-  minHeight: 40,
-  height: 'auto',
-  pr: 1,
-  '& .MuiChip-label': { px: 2, py: 1 },
-  '& .MuiChip-deleteIcon': {
-    fontSize: 20,
-    marginRight: 10,
-  },
-};
+/** One chip per label — account can have duplicate Option rows with the same label. */
+function dedupeGraftButtonsByLabel(buttons) {
+  const seen = new Set();
+  return (buttons || []).filter((b) => {
+    const label = b?.label;
+    if (label == null || label === '') return false;
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+}
 
 /**
  * Modal for technician to add/remove buttons from their view for this surgery.
@@ -37,13 +36,18 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
     );
   };
 
-  const handleSave = () => {
-    onSave?.(selected);
-    onClose();
+  const handleSave = async () => {
+    try {
+      await onSave?.(selected);
+      onClose();
+    } catch (err) {
+      console.error('Failed to save button config', err);
+    }
   };
 
-  const available = graftButtons.filter((b) => !selected.includes(b.label));
-  const selectedButtons = graftButtons.filter((b) => selected.includes(b.label));
+  const uniqueButtons = dedupeGraftButtonsByLabel(graftButtons);
+  const available = uniqueButtons.filter((b) => !selected.includes(b.label));
+  const selectedButtons = uniqueButtons.filter((b) => selected.includes(b.label));
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -59,17 +63,17 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
           <Typography variant="subtitle2" fontWeight={600} color="text.secondary" sx={{ mb: 1 }}>
             Selected (visible on your buttons)
           </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'flex-start', alignContent: 'flex-start' }}>
             {selectedButtons.length === 0 ? (
               <Typography variant="body2" color="text.secondary">None selected</Typography>
             ) : (
               selectedButtons.map((btn) => (
                 <Chip
                   key={btn.label}
+                  size="large"
                   label={btn.label}
                   onDelete={() => toggle(btn.label)}
                   color="primary"
-                  sx={chipSx}
                 />
               ))
             )}
@@ -79,17 +83,18 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
           <Typography variant="subtitle2" fontWeight={600} color="text.secondary" sx={{ mb: 1 }}>
             Available (click to add)
           </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'flex-start', alignContent: 'flex-start' }}>
             {available.length === 0 ? (
               <Typography variant="body2" color="text.secondary">All buttons selected</Typography>
             ) : (
               available.map((btn) => (
                 <Chip
                   key={btn.label}
+                  size="large"
                   label={btn.label}
                   onClick={() => toggle(btn.label)}
                   variant="outlined"
-                  sx={{ ...chipSx, cursor: 'pointer' }}
+                  sx={{ cursor: 'pointer' }}
                 />
               ))
             )}

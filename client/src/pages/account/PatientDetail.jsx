@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Typography, Grid, Divider, Chip,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Link as MuiLink, Button, TextField, IconButton,
+  Link as MuiLink, Button, TextField, IconButton, CircularProgress,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import CheckIcon from '@mui/icons-material/Check';
@@ -158,8 +158,8 @@ export default function PatientDetail() {
 
   if (loading || !patient) {
     return (
-      <Box sx={{ p: 4 }}>
-        <Typography color="text.secondary">Loading…</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+        <CircularProgress size={40} />
       </Box>
     );
   }

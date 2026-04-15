@@ -1,4 +1,5 @@
 const { Parse } = require('../parse');
+const { maybeTouchLastActiveAt } = require('../lib/lastActiveAt');
 
 module.exports = async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -30,6 +31,7 @@ module.exports = async function authenticate(req, res, next) {
       lastName:  parseUser.get('lastName')  || '',
       username:  parseUser.get('username')  || '',
     };
+    maybeTouchLastActiveAt(req.user.id);
     next();
   } catch (err) {
     console.error('[auth] session validation error:', err.message);

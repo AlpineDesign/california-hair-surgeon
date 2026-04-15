@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography, Link as MuiLink, Tabs, Tab,
+  TableHead, TableRow, Typography, Tabs, Tab,
 } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { getSurgeries } from '../../api/surgeries';
 import PageHeader from '../../components/PageHeader';
@@ -13,7 +13,6 @@ import EmptyState from '../../components/EmptyState';
 import TableLoader from '../../components/TableLoader';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import { getTotalGrafts, getGoalPct, formatDateTime } from '../../utils/surgery';
-import TechnicianReportModal from '../../components/TechnicianReportModal';
 import S from '../../strings';
 
 const POLL_INTERVAL_MS = 5000;
@@ -24,9 +23,9 @@ function getGreeting(firstName) {
   return `${time}${firstName ? ` ${firstName}` : ''}`;
 }
 
-const ACTIVE_COLS = [S.patient, S.extractionStarted, S.placingStarted, S.grafts, ''];
+const ACTIVE_COLS = [S.patient, S.extractionStarted, S.placingStarted, S.grafts];
 
-function ActiveSurgeriesTable({ surgeries, loading, basePath }) {
+function ActiveSurgeriesTable({ surgeries, loading, onRowClick }) {
   if (loading) {
     return (
       <TableContainer>
@@ -52,8 +51,15 @@ function ActiveSurgeriesTable({ surgeries, loading, basePath }) {
           </TableRow>
         </TableHead>
         <TableBody>
-          {surgeries.map((s) => (
-            <TableRow key={s.id || s.objectId} hover>
+          {surgeries.map((s) => {
+            const sid = s.id || s.objectId;
+            return (
+            <TableRow
+              key={sid}
+              hover
+              onClick={() => onRowClick(sid)}
+              sx={{ cursor: 'pointer' }}
+            >
               <TableCell>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="body1" fontWeight={600}>{s.patient?.initials || '—'}</Typography>
@@ -69,22 +75,18 @@ function ActiveSurgeriesTable({ surgeries, loading, basePath }) {
               <TableCell sx={{ minWidth: 260 }}>
                 <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
               </TableCell>
-              <TableCell align="right">
-                <MuiLink component={Link} to={`${basePath}/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                  {S.dashboard}
-                </MuiLink>
-              </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </TableContainer>
   );
 }
 
-const UPCOMING_PAST_COLS = [S.patient, S.date, S.grafts, S.goal, S.actions];
+const UPCOMING_PAST_COLS = [S.patient, S.date, S.grafts, S.goal];
 
-function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onReport }) {
+function SurgeriesTable({ surgeries, emptyMessage, onRowClick }) {
   if (!surgeries.length) {
     return <EmptyState icon={<MedicalServicesIcon />} message={emptyMessage} />;
   }
@@ -101,8 +103,15 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onRepor
           </TableRow>
         </TableHead>
         <TableBody>
-          {surgeries.map((s) => (
-            <TableRow key={s.id || s.objectId} hover>
+          {surgeries.map((s) => {
+            const sid = s.id || s.objectId;
+            return (
+            <TableRow
+              key={sid}
+              hover
+              onClick={() => onRowClick(sid)}
+              sx={{ cursor: 'pointer' }}
+            >
               <TableCell>
                 <Typography variant="body1" fontWeight={600}>{s.patient?.initials || '—'}</Typography>
               </TableCell>
@@ -115,27 +124,9 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onRepor
               <TableCell>
                 <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
               </TableCell>
-              <TableCell>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  {showReport && s.status === 'completed' ? (
-                    <MuiLink
-                      component="button"
-                      variant="body2"
-                      fontWeight={600}
-                      onClick={() => onReport(s)}
-                      sx={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: 'inherit' }}
-                    >
-                      {S.report}
-                    </MuiLink>
-                  ) : (
-                    <MuiLink component={Link} to={`${basePath}/${s.id || s.objectId}`} variant="body2" fontWeight={600}>
-                      {S.dashboard}
-                    </MuiLink>
-                  )}
-                </Box>
-              </TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </TableContainer>
@@ -143,11 +134,11 @@ function SurgeriesTable({ surgeries, emptyMessage, showReport, basePath, onRepor
 }
 
 export default function RemoteHome() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [surgeries, setSurgeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('upcoming');
-  const [reportSurgery, setReportSurgery] = useState(null);
 
   const fetchSurgeries = useCallback(async () => {
     try {
@@ -167,6 +158,7 @@ export default function RemoteHome() {
   }, [fetchSurgeries]);
 
   const basePath = '/remote/surgeries';
+  const goToSurgery = (sid) => navigate(`${basePath}/${sid}`);
   const active = surgeries.filter((s) => s.status === 'active');
   const past = surgeries.filter((s) => s.status === 'completed');
   const upcoming = surgeries.filter((s) => s.status !== 'active' && s.status !== 'completed');
@@ -177,7 +169,7 @@ export default function RemoteHome() {
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" sx={{ mb: 2 }}>{S.activeSurgeries}</Typography>
-        <ActiveSurgeriesTable surgeries={active} loading={loading} basePath={basePath} />
+        <ActiveSurgeriesTable surgeries={active} loading={loading} onRowClick={goToSurgery} />
       </Paper>
 
       <Paper sx={{ p: 3 }}>
@@ -193,29 +185,17 @@ export default function RemoteHome() {
           <SurgeriesTable
             surgeries={upcoming}
             emptyMessage={S.emptyUpcomingSurgeries}
-            showReport={false}
-            basePath={basePath}
-            onReport={setReportSurgery}
+            onRowClick={goToSurgery}
           />
         ) : (
           <SurgeriesTable
             surgeries={past}
             emptyMessage={S.emptyPastSurgeries}
-            showReport
-            basePath={basePath}
-            onReport={setReportSurgery}
+            onRowClick={goToSurgery}
           />
         )}
       </Paper>
 
-      {reportSurgery && (
-        <TechnicianReportModal
-          key={reportSurgery.id || reportSurgery.objectId}
-          surgery={reportSurgery}
-          open
-          onClose={() => setReportSurgery(null)}
-        />
-      )}
     </Box>
   );
 }

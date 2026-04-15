@@ -4,7 +4,7 @@ const authenticate = require('../middleware/auth');
 const requireRole  = require('../middleware/roles');
 const { toId } = require('../middleware/accountScope');
 
-const TEAM_ROLES = ['technician', 'doctor', 'user']; // 'user' kept for backward compat
+const TEAM_ROLES = ['accountOwner', 'technician', 'doctor', 'user']; // 'user' kept for backward compat
 
 function toJSON(user) {
   const { password, sessionToken, authData, ...rest } = user.toJSON();
