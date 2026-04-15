@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Typography, FormControl, InputLabel, Select,
-  MenuItem, Button, IconButton,
+  MenuItem, Button,
 } from '@mui/material';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { getSurgeries } from '../../api/surgeries';
 import { getAccounts } from '../../api/accounts';
 import GraftProgressBar from '../../components/GraftProgressBar';
@@ -16,7 +16,7 @@ import TableLoader from '../../components/TableLoader';
 import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
-const COLUMNS = [S.company, S.patient, S.date, S.grafts, S.goal, 'Status', ''];
+const COLUMNS = [S.company, S.patient, S.date, S.grafts, S.goal, 'Status'];
 
 function surgeriesToCsv(surgeries) {
   const headers = ['Clinic', 'Patient', 'Date', 'Grafts', 'Goal', 'Status'];
@@ -48,6 +48,7 @@ function downloadCsv(surgeries) {
 }
 
 export default function AdminSurgeries() {
+  const navigate = useNavigate();
   const [surgeries, setSurgeries] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [accountFilter, setAccountFilter] = useState('');
@@ -142,10 +143,23 @@ export default function AdminSurgeries() {
                   </TableCell>
                 </TableRow>
               ) : (
-                surgeries.map((s) => (
-                  <TableRow key={s.id || s.objectId} hover>
+                surgeries.map((s) => {
+                  const aid =
+                    s.account?.id
+                    ?? (typeof s.accountId === 'string' ? s.accountId : s.accountId?.objectId);
+                  const sid = s.id || s.objectId;
+                  const canOpen = Boolean(aid && sid);
+                  return (
+                  <TableRow
+                    key={s.id || s.objectId}
+                    hover
+                    onClick={() => {
+                      if (canOpen) navigate(`/admin/clinics/${aid}/surgeries/${sid}`);
+                    }}
+                    sx={{ cursor: canOpen ? 'pointer' : 'default' }}
+                  >
                     <TableCell>
-                      <Typography variant="body2">
+                      <Typography variant="body2" fontWeight={600}>
                         {s.account?.practiceName || '—'}
                       </Typography>
                     </TableCell>
@@ -166,28 +180,9 @@ export default function AdminSurgeries() {
                     <TableCell>
                       <StatusBadge status={s.status} />
                     </TableCell>
-                    <TableCell align="right" width={56}>
-                      {(() => {
-                        const aid = s.account?.id ?? (typeof s.accountId === 'string' ? s.accountId : s.accountId?.objectId);
-                        const sid = s.id || s.objectId;
-                        return aid && sid ? (
-                          <IconButton
-                            component="a"
-                            href={`/admin/clinics/${aid}/surgeries/${sid}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            size="small"
-                            aria-label="Open surgery dashboard"
-                            title="Open surgery dashboard"
-                            sx={{ color: 'primary.main' }}
-                          >
-                            <OpenInNewIcon fontSize="small" />
-                          </IconButton>
-                        ) : null;
-                      })()}
-                    </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>

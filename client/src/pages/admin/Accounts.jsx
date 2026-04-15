@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Typography,
 } from '@mui/material';
 import BusinessIcon from '@mui/icons-material/Business';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { getAccounts, deleteAccount } from '../../api/accounts';
 import PageHeader from '../../components/PageHeader';
 import EmptyState from '../../components/EmptyState';
@@ -14,6 +14,7 @@ import RowMenu from '../../components/RowMenu';
 import S from '../../strings';
 
 export default function Accounts() {
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -77,7 +78,12 @@ export default function Accounts() {
                 </TableRow>
               ) : (
                 accounts.map((acc) => (
-                  <TableRow key={acc.id} hover>
+                  <TableRow
+                    key={acc.id}
+                    hover
+                    onClick={() => navigate(`/admin/clinics/${acc.id}`)}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <TableCell>
                       <Typography variant="body1" fontWeight={600}>
                         {acc.practiceName || '—'}
@@ -100,15 +106,8 @@ export default function Accounts() {
                           : '—'}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">
+                    <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                       <RowMenu
-                        extraItems={[
-                          {
-                            label: S.viewDashboard,
-                            icon: <OpenInNewIcon fontSize="small" />,
-                            onClick: () => window.open(`/admin/clinics/${acc.id}`, '_blank', 'noopener,noreferrer'),
-                          },
-                        ]}
                         confirmMessage={S.deleteCompanyConfirm}
                         onDelete={async () => {
                           await deleteAccount(acc.id);

@@ -19,20 +19,35 @@ export function getGoalPct(surgery) {
   return `${Math.round((total / goal) * 100)}%`;
 }
 
+/** Parse Server JSON often encodes dates as `{ __type: 'Date', iso: '...' }` instead of a string. */
+function toJsDate(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'object' && value.__type === 'Date' && typeof value.iso === 'string') {
+    const d = new Date(value.iso);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function formatDateTime(dateStr) {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  const d = toJsDate(dateStr);
+  if (!d) return '—';
+  return d.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString([], { dateStyle: 'medium' });
+  const d = toJsDate(dateStr);
+  if (!d) return '—';
+  return d.toLocaleDateString([], { dateStyle: 'medium' });
 }
 
 export function formatDateMmDdYyyy(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
+  const d = toJsDate(dateStr);
+  if (!d) return null;
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   const y = d.getFullYear();
@@ -40,8 +55,8 @@ export function formatDateMmDdYyyy(dateStr) {
 }
 
 export function formatStartedAt(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
+  const d = toJsDate(dateStr);
+  if (!d) return '—';
   const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
   const date = d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   return `${time} | ${date}`;
