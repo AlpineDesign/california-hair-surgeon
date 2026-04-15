@@ -22,6 +22,7 @@ import {
   getReportTechnicianColumns,
   getSurgeryTotalMs, getTechnicianDisplayName, getSelectedTechnicians, getExtractionEntries,
   formatReportDateTime, formatReportTime, formatDateMmDdYyyy,
+  mergeSurgeryPatch,
 } from '../../utils/surgery';
 import StatusBadge from '../../components/StatusBadge';
 import PatientModal from '../../components/PatientModal';
@@ -334,7 +335,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
         action: 'extraction',
         payload: { label: entry.label, intactHairs: entry.intactHairs, totalHairs: entry.totalHairs },
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
       setActivitiesRefresh((r) => r + 1);
     } catch (err) {
       console.error('Failed to update extraction', err);

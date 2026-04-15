@@ -1,12 +1,24 @@
 import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Box, Typography, Button, Chip,
+  Box, Typography, Button, Chip, Divider,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
-import AddIcon from '@mui/icons-material/Add';
 import S from '../strings';
+
+const chipSx = {
+  fontSize: '1rem',
+  fontWeight: 600,
+  minHeight: 40,
+  height: 'auto',
+  pr: 1,
+  '& .MuiChip-label': { px: 2, py: 1 },
+  '& .MuiChip-deleteIcon': {
+    fontSize: 20,
+    marginRight: 10,
+  },
+};
 
 /**
  * Modal for technician to add/remove buttons from their view for this surgery.
@@ -35,13 +47,14 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
         {S.editButtons}
-        <IconButton onClick={onClose} size="small" aria-label="Close">
+        <IconButton onClick={onClose} size="small" aria-label={S.cancel}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
-      <DialogContent>
+      <Divider />
+      <DialogContent sx={{ pt: 2 }}>
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle2" fontWeight={600} color="text.secondary" sx={{ mb: 1 }}>
             Selected (visible on your buttons)
@@ -56,7 +69,7 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
                   label={btn.label}
                   onDelete={() => toggle(btn.label)}
                   color="primary"
-                  size="small"
+                  sx={chipSx}
                 />
               ))
             )}
@@ -76,16 +89,24 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
                   label={btn.label}
                   onClick={() => toggle(btn.label)}
                   variant="outlined"
-                  size="small"
-                  icon={<AddIcon sx={{ fontSize: 16 }} />}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{ ...chipSx, cursor: 'pointer' }}
                 />
               ))
             )}
           </Box>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
+      <Divider />
+      <DialogActions
+        sx={{
+          px: 3,
+          py: 2,
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          gap: 1,
+          flexWrap: 'wrap',
+        }}
+      >
         <Button onClick={onClose}>{S.cancel}</Button>
         <Button variant="contained" onClick={handleSave}>
           {S.save}

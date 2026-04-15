@@ -1,3 +1,12 @@
+/**
+ * Merge a partial surgery payload from the API into existing client state.
+ * Activity endpoints return slim surgery (no patient / graftButtons hydration).
+ */
+export function mergeSurgeryPatch(prev, patch) {
+  if (patch == null) return prev ?? null;
+  return prev ? { ...prev, ...patch } : patch;
+}
+
 export function getTotalGrafts(surgery) {
   const entries = surgery?.extraction?.entries ?? [];
   return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);

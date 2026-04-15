@@ -251,7 +251,8 @@ router.post('/:id/activities', async (req, res) => {
       surgery.set('placement', newPlc);
     }
     await surgery.save(null, { useMasterKey: true });
-    res.status(201).json({ activity: toJSON(activity), surgery: await withGraftButtons(await withPatient(toJSON(surgery))) });
+    // Omit withPatient/withGraftButtons — client already has them; saves two DB round-trips per click.
+    res.status(201).json({ activity: toJSON(activity), surgery: toJSON(surgery) });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -284,7 +285,7 @@ router.patch('/:id/activities/:activityId', async (req, res) => {
     }
     await activity.save(null, { useMasterKey: true });
     await surgery.save(null, { useMasterKey: true });
-    res.json({ activity: toJSON(activity), surgery: await withGraftButtons(await withPatient(toJSON(surgery))) });
+    res.json({ activity: toJSON(activity), surgery: toJSON(surgery) });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -306,7 +307,7 @@ router.delete('/:id/activities/:activityId', async (req, res) => {
     else if (action === 'placement') surgery.set('placement', applyPlacementDelta(plc, -1));
     await surgery.save(null, { useMasterKey: true });
     await activity.destroy({ useMasterKey: true });
-    res.json({ surgery: await withGraftButtons(await withPatient(toJSON(surgery))) });
+    res.json({ surgery: toJSON(surgery) });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });

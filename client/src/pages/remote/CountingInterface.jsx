@@ -16,6 +16,7 @@ import {
   getTechnicianStatsFromActivities,
   getTechnicianDisplayName,
   formatStartedAt,
+  mergeSurgeryPatch,
 } from '../../utils/surgery';
 import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
@@ -154,7 +155,7 @@ export default function CountingInterface() {
         action: 'extraction',
         payload,
       });
-      if (res.surgery) setSurgery(res.surgery);
+      if (res.surgery) setSurgery((prev) => mergeSurgeryPatch(prev, res.surgery));
       const serverAct = res.activity;
       if (serverAct) {
         const rid = serverAct.id || serverAct.objectId;
@@ -197,7 +198,7 @@ export default function CountingInterface() {
         intactHairs: btn.intactHairs,
         totalHairs: btn.totalHairs,
       });
-      setSurgery(updated);
+      setSurgery((prev) => mergeSurgeryPatch(prev, updated));
       fetchActivities();
       setActivityModal(null);
     } catch (err) {
@@ -209,7 +210,7 @@ export default function CountingInterface() {
     if (!activityModal || !id) return;
     try {
       const { surgery: updated } = await deleteActivity(id, activityModal.id);
-      setSurgery(updated);
+      setSurgery((prev) => mergeSurgeryPatch(prev, updated));
       fetchActivities();
       setActivityModal(null);
     } catch (err) {
@@ -225,7 +226,7 @@ export default function CountingInterface() {
     configs.push({ userId: myUserId, labels });
     try {
       const result = await updateSurgery(id, { technicianButtonConfigs: configs });
-      setSurgery(result);
+      setSurgery((prev) => mergeSurgeryPatch(prev, result));
       setEditButtonsOpen(false);
     } catch (err) {
       console.error('Failed to save button config', err);
@@ -310,7 +311,7 @@ export default function CountingInterface() {
               action: 'extraction',
               payload,
             });
-            if (res?.surgery) setSurgery(res.surgery);
+            if (res?.surgery) setSurgery((prev) => mergeSurgeryPatch(prev, res.surgery));
             const serverAct = res?.activity;
             if (serverAct) {
               const rid = serverAct.id || serverAct.objectId;

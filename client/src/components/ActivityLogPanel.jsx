@@ -7,6 +7,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { getActivities, updateActivity, deleteActivity } from '../api/surgeries';
+import { mergeSurgeryPatch } from '../utils/surgery';
 import S from '../strings';
 
 function formatTime(dateStr) {
@@ -111,7 +112,7 @@ export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractio
         intactHairs: btn.intactHairs,
         totalHairs: btn.totalHairs,
       });
-      onSurgeryUpdate?.(surgery);
+      onSurgeryUpdate?.((prev) => mergeSurgeryPatch(prev, surgery));
       setEditDialog(null);
       fetchActivities();
     } catch (err) {
@@ -123,7 +124,7 @@ export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractio
     if (!surgeryId) return;
     try {
       const { surgery } = await deleteActivity(surgeryId, activity.id);
-      onSurgeryUpdate?.(surgery);
+      onSurgeryUpdate?.((prev) => mergeSurgeryPatch(prev, surgery));
       fetchActivities();
     } catch (err) {
       console.error('Failed to delete activity', err);

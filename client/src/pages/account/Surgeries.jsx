@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Box, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography, Link as MuiLink,
+  TableHead, TableRow, Typography,
 } from '@mui/material';
-import { Link } from 'react-router-dom';
+import EditIcon from '@mui/icons-material/Edit';
+import { useNavigate } from 'react-router-dom';
 import { getSurgeries, deleteSurgery } from '../../api/surgeries';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import PageHeader from '../../components/PageHeader';
@@ -18,9 +19,10 @@ import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
 const POLL_INTERVAL_MS = 5000;
-const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions, ''];
+const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions];
 
 export default function Surgeries() {
+  const navigate = useNavigate();
   const [surgeries, setSurgeries] = useState([]);
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -96,11 +98,13 @@ export default function Surgeries() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((s) => (
+                filtered.map((s) => {
+                  const sid = s.id || s.objectId;
+                  return (
                   <TableRow
-                    key={s.id || s.objectId}
+                    key={sid}
                     hover
-                    onClick={() => setEditTarget(s)}
+                    onClick={() => navigate(`/dashboard/surgeries/${sid}`)}
                     sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>
@@ -120,37 +124,22 @@ export default function Surgeries() {
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Box sx={{ display: 'flex', gap: 2 }}>
-                        {s.status === 'completed' ? (
-                          <MuiLink
-                            component={Link}
-                            to={`/dashboard/surgeries/${s.id || s.objectId}?report=1`}
-                            variant="body2"
-                            fontWeight={600}
-                          >
-                            {S.report}
-                          </MuiLink>
-                        ) : (
-                          <MuiLink
-                            component={Link}
-                            to={`/dashboard/surgeries/${s.id || s.objectId}`}
-                            variant="body2"
-                            fontWeight={600}
-                          >
-                            {S.dashboard}
-                          </MuiLink>
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell align="right" width={48} onClick={(e) => e.stopPropagation()}>
+                    <TableCell align="right" width={56} onClick={(e) => e.stopPropagation()}>
                       <RowMenu
-                        onDelete={() => handleDelete(s.id || s.objectId)}
+                        onDelete={() => handleDelete(sid)}
                         confirmMessage={S.surgeryDeleteConfirm}
+                        extraItems={[
+                          {
+                            label: S.edit,
+                            icon: <EditIcon fontSize="small" />,
+                            onClick: () => setEditTarget(s),
+                          },
+                        ]}
                       />
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>
