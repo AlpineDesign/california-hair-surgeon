@@ -4,6 +4,8 @@
  * - Otherwise accountOwner uses req.user.accountId.
  */
 
+const normalizeRoles = require('../lib/normalizeRoles');
+
 function toId(ref) {
   if (ref == null) return null;
   if (typeof ref === 'string') return ref;
@@ -25,16 +27,17 @@ function getAccountIdFromRequest(req) {
  * Dual role: header wins when present; else accountOwner may use own accountId.
  */
 function resolveScopedAccount(req, res, next) {
-  const roles = req.user?.roles || [];
+  const roles = normalizeRoles(req.user?.roles);
   const headerId = req.headers['x-scope-account-id'];
   const trimmed = typeof headerId === 'string' ? headerId.trim() : '';
+  const aid = toId(req.user?.accountId);
 
   if (roles.includes('admin') && trimmed) {
     req.scopedAccountId = trimmed;
     return next();
   }
-  if ((roles.includes('accountOwner') || roles.includes('doctor')) && req.user.accountId) {
-    req.scopedAccountId = toId(req.user.accountId);
+  if ((roles.includes('accountOwner') || roles.includes('doctor')) && aid) {
+    req.scopedAccountId = aid;
     return next();
   }
   if (roles.includes('admin')) {

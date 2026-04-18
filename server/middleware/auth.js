@@ -1,5 +1,6 @@
 const { Parse } = require('../parse');
 const { maybeTouchLastActiveAt } = require('../lib/lastActiveAt');
+const normalizeRoles = require('../lib/normalizeRoles');
 
 module.exports = async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -13,19 +14,25 @@ module.exports = async function authenticate(req, res, next) {
     // in self-hosted Parse Server environments.
     const sessionQuery = new Parse.Query('_Session');
     sessionQuery.equalTo('sessionToken', sessionToken);
-    sessionQuery.include('user');
     const session = await sessionQuery.first({ useMasterKey: true });
 
     if (!session) {
       return res.status(401).json({ error: 'Invalid or expired session' });
     }
 
-    const parseUser = session.get('user');
-    await parseUser.fetch({ useMasterKey: true });
+    const ref = session.get('user');
+    const userId =
+      typeof ref === 'string'
+        ? ref
+        : ref?.id || ref?.objectId || null;
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+    const parseUser = await new Parse.Query(Parse.User).get(userId, { useMasterKey: true });
 
     req.user = {
       id:        parseUser.id,
-      roles:     parseUser.get('roles')     || [],
+      roles:     normalizeRoles(parseUser.get('roles')),
       accountId: parseUser.get('accountId') || null,
       firstName: parseUser.get('firstName') || '',
       lastName:  parseUser.get('lastName')  || '',

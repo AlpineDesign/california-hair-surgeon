@@ -31,6 +31,7 @@ import EditDoctorModal from '../../components/EditDoctorModal';
 import { colors } from '../../theme/tokens';
 import S from '../../strings';
 import html2pdf from 'html2pdf.js';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
 const REPORT_PDF_WIDTH = 794; // A4 width in px at 96dpi
 
@@ -51,7 +52,7 @@ const SURGICAL_FIELDS = [
   { key: 'placingDevice', label: 'Placing Device', optionsKey: 'placingDevices' },
 ];
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 
 function useSurgeryActivities(surgeryId, refreshTrigger = 0) {
   const [activities, setActivities] = useState([]);
@@ -70,11 +71,7 @@ function useSurgeryActivities(surgeryId, refreshTrigger = 0) {
     load();
   }, [surgeryId, load, refreshTrigger]);
 
-  useEffect(() => {
-    if (!surgeryId) return;
-    const id = setInterval(load, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [surgeryId, load]);
+  usePollWhileVisible(load, POLL_INTERVAL_MS);
 
   return activities;
 }
@@ -1038,7 +1035,6 @@ export default function SurgeryDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   const adminCompany = useAdminCompany();
-  const backTo = location.state?.backTo ?? '/dashboard/surgeries';
   const [surgery, setSurgery] = useState(null);
   const [technicians, setTechnicians] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -1049,27 +1045,59 @@ export default function SurgeryDetail() {
   const [startError, setStartError] = useState('');
   const [exportPdfApi, setExportPdfApi] = useState(null);
 
-  const fetchSurgery = useCallback(async () => {
+  /** Polling only — merges light fields into existing state. */
+  const fetchSurgeryLight = useCallback(async () => {
     if (!id) return;
     try {
-      const data = await getSurgery(id);
-      setSurgery(data);
+      const data = await getSurgery(id, { light: '1' });
+      setSurgery((prev) => {
+        if (!data) return prev;
+        if (!prev) return data;
+        return {
+          ...prev,
+          ...data,
+          patient: prev.patient ?? data.patient,
+          graftButtons: prev.graftButtons ?? data.graftButtons,
+        };
+      });
     } catch (err) {
       console.error('Failed to fetch surgery', err);
-    } finally {
-      setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    fetchSurgery();
-  }, [fetchSurgery]);
+    let cancelled = false;
+    if (!id) {
+      setLoading(false);
+      return undefined;
+    }
+    setLoading(true);
+    setSurgery(null);
+    (async () => {
+      try {
+        const lite = await getSurgery(id, { light: '1' });
+        if (cancelled) return;
+        setSurgery(lite);
+        setLoading(false);
 
-  useEffect(() => {
-    if (!id) return;
-    const interval = setInterval(fetchSurgery, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [id, fetchSurgery]);
+        const hydrated = await getSurgery(id, { omitGrafts: '1' });
+        if (cancelled) return;
+        setSurgery((prev) =>
+          prev && hydrated
+            ? { ...prev, ...hydrated, patient: hydrated.patient ?? prev.patient }
+            : hydrated,
+        );
+      } catch (err) {
+        console.error('Failed to fetch surgery', err);
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  usePollWhileVisible(fetchSurgeryLight, POLL_INTERVAL_MS);
 
   useEffect(() => {
     const params = adminCompany?.accountId ? { accountId: adminCompany.accountId } : {};
@@ -1089,7 +1117,7 @@ export default function SurgeryDetail() {
     getSettings().then(setCompany).catch(() => {});
   }, []);
 
-  const handleBack = () => navigate(backTo);
+  const handleBack = () => navigate(-1);
 
   const handleStart = async () => {
     setStartError('');
@@ -1168,7 +1196,8 @@ export default function SurgeryDetail() {
     }
   };
 
-  const handleReport = () => navigate(`${backTo.replace(/\/$/, '')}/${id}?report=1`);
+  const handleReport = () =>
+    navigate({ pathname: location.pathname, search: '?report=1' });
 
   const handleComplete = async () => {
     try {
@@ -1211,7 +1240,7 @@ export default function SurgeryDetail() {
             startIcon={<ArrowBackIcon />}
             sx={{ textTransform: 'none' }}
           >
-            Back
+            {S.back}
           </Button>
           {done && exportPdfApi && (
             <Button

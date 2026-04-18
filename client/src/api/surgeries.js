@@ -10,8 +10,8 @@ export const getSurgeriesByPatient = async (patientId) => {
   return data;
 };
 
-export const getSurgery = async (id) => {
-  const { data } = await client.get(`/api/surgeries/${id}`);
+export const getSurgery = async (id, params = {}) => {
+  const { data } = await client.get(`/api/surgeries/${id}`, { params });
   return data;
 };
 

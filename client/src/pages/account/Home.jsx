@@ -15,8 +15,9 @@ import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import NewSurgeryModal from './NewSurgeryModal';
 import { getTotalGrafts, getGoalPct, formatDateTime } from '../../utils/surgery';
 import S from '../../strings';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 
 function getGreeting(firstName) {
   const hour = new Date().getHours();
@@ -155,9 +156,9 @@ export default function Home() {
 
   useEffect(() => {
     fetchSurgeries();
-    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchSurgeries]);
+
+  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
 
   const active = surgeries.filter((s) => s.status === 'active');
   const past = surgeries.filter((s) => s.status === 'completed');

@@ -2,13 +2,14 @@ const router = require('express').Router();
 const { Parse } = require('../parse');
 const { seedAccountFromDefaults } = require('../lib/seedAccount');
 const { touchLastActiveAt } = require('../lib/lastActiveAt');
+const normalizeRoles = require('../lib/normalizeRoles');
 
 function userPayload(parseUser) {
   return {
     id:        parseUser.id,
     token:     parseUser.getSessionToken(),
     username:  parseUser.get('username')  || '',
-    roles:     parseUser.get('roles')     || [],
+    roles:     normalizeRoles(parseUser.get('roles')),
     accountId: parseUser.get('accountId') || null,
     firstName: parseUser.get('firstName') || '',
     lastName:  parseUser.get('lastName')  || '',

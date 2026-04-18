@@ -27,24 +27,24 @@ No Parse SDK on the client — ever.
 | POST | `/api/auth/login` | any | Returns JWT |
 | POST | `/api/auth/signup` | public | Creates User (accountOwner) + Account |
 | POST | `/api/auth/reset-password` | any | Initiates password reset |
-| GET | `/api/surgeries` | owner | List account surgeries |
-| POST | `/api/surgeries` | owner | Create surgery |
+| GET | `/api/surgeries` | owner / doctor / tech | List account surgeries (technicians: all in account) |
+| POST | `/api/surgeries` | owner / doctor | Create surgery |
 | GET | `/api/surgeries/:id` | owner/user | Surgery detail |
 | PATCH | `/api/surgeries/:id` | owner/user | Update surgery (goal, status, etc.) |
 | POST | `/api/surgeries/:id/extraction` | user | Update extraction entry counts |
 | POST | `/api/surgeries/:id/placement` | user | Update placement count |
-| GET | `/api/users` | owner | List technicians in account |
-| POST | `/api/users` | owner | Create technician |
-| DELETE | `/api/users/:id` | owner | Remove technician |
+| GET | `/api/users` | owner / doctor | List team in account |
+| POST | `/api/users` | owner / doctor | Create technician or doctor |
+| DELETE | `/api/users/:id` | owner / doctor | Remove user (cannot remove clinic owner unless owner) |
 | GET | `/api/settings` | owner | Get account branding + owner profile |
 | PATCH | `/api/settings` | owner | Update account branding + owner profile |
 | GET | `/api/settings/options` | owner | Get account dropdown option lists |
 | PATCH | `/api/settings/options` | owner | Update a specific option list |
 | GET | `/api/patients` | owner | List patients in account |
 | GET | `/api/patients/:id` | owner | Patient detail + surgery history |
-| POST | `/api/patients` | owner | Create patient |
-| PATCH | `/api/patients/:id` | owner | Update patient |
-| DELETE | `/api/patients/:id` | owner | Delete patient |
+| POST | `/api/patients` | owner / doctor | Create patient |
+| PATCH | `/api/patients/:id` | owner / doctor | Update patient |
+| DELETE | `/api/patients/:id` | owner / doctor | Delete patient |
 | GET | `/api/accounts` | admin | List all accounts |
 | POST | `/api/accounts` | admin | Create account |
 | PATCH | `/api/accounts/:id` | admin | Edit account |
@@ -55,5 +55,5 @@ No Parse SDK on the client — ever.
 ## Server-Side
 
 - Auth middleware (`middleware/auth.js`) validates JWT on every protected route
-- Role guard (`middleware/roles.js`) checks `req.user.roles.includes(role)` — uses array, never string equality
+- Role guard (`middleware/roles.js`) checks `req.user.roles.includes(role)` — uses array, never string equality; clinic staff mutations use `requireOwnerOrDoctor` (account owner or doctor)
 - All non-admin queries are scoped by `accountId` from the JWT payload

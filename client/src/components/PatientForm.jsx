@@ -21,7 +21,7 @@ function SelectField({ label, name, value, onChange, options = [] }) {
 }
 
 /**
- * Shared patient form fields. Uses type="date" for DOB (YYYY-MM-DD) for consistency.
+ * Shared patient form fields. DOB is free text (e.g. MM/DD/YYYY) — matches list/detail formatting.
  * Used in: PatientModal, NewSurgeryModal inline new patient.
  */
 export default function PatientFormFields({ form, onChange, options = {} }) {
@@ -39,11 +39,10 @@ export default function PatientFormFields({ form, onChange, options = {} }) {
       <TextField
         label={S.dateOfBirth}
         name="dob"
-        type="date"
-        value={form.dob || ''}
+        value={form.dob ?? ''}
         onChange={onChange}
         fullWidth
-        InputLabelProps={{ shrink: true }}
+        placeholder={S.dobPlaceholder}
       />
       <SelectField label={S.hairType} name="hairType" value={form.hairType} onChange={onChange} options={options.hairTypes ?? []} />
       <SelectField label={S.hairColor} name="hairColor" value={form.hairColor} onChange={onChange} options={options.hairColors ?? []} />

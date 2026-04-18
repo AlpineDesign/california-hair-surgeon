@@ -22,6 +22,7 @@ const strings = {
   remove: 'Remove',
   select: 'Select…',
   loading: 'Loading…',
+  saving: 'Saving…',
   next: 'Next',
   confirmDeleteTitle: 'Are you sure?',
   confirmDeleteDefault: 'This action cannot be undone.',
@@ -122,6 +123,15 @@ const strings = {
   resumeTimer: 'Resume',
   completePlacement: 'Complete Placement',
   statusNotStarted: 'NOT STARTED',
+  techDashWaitForStartTitle: 'Surgery not started',
+  techDashWaitForStartBody:
+    'Your doctor must start this surgery from the dashboard before you can log grafts.',
+  techEditButtonsSelectedHelp: 'Selected (visible on your buttons)',
+  techEditButtonsAvailableHelp: 'Available (click to add)',
+  techEditButtonsNoneSelected: 'None selected',
+  techEditButtonsAllSelected: 'All buttons selected',
+  techEditButtonsConfigureHint:
+    'No graft buttons configured. Ask your account owner to add them in Settings.',
   graftButtonsHelper: 'Add graft types in Settings → Application Settings → Graft Buttons',
   activityLog: 'Activity Log',
   activityLogHelper: 'Rolling log of button clicks',

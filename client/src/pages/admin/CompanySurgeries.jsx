@@ -14,8 +14,9 @@ import EmptyState from '../../components/EmptyState';
 import TableLoader from '../../components/TableLoader';
 import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 const COLUMNS = [S.patient, S.date, S.grafts, S.goal];
 
 export default function CompanySurgeries() {
@@ -43,9 +44,9 @@ export default function CompanySurgeries() {
   useEffect(() => {
     setLoading(true);
     fetchSurgeries();
-    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchSurgeries]);
+
+  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
 
   const filtered = surgeries.filter((s) => {
     const name = s.patient?.initials || '';

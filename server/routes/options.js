@@ -14,9 +14,10 @@ const {
   getAccountIdFromRequest,
   toId,
 } = require('../middleware/accountScope');
+const normalizeRoles = require('../lib/normalizeRoles');
 
 function requireOwnerOrAdminScoped(req, res, next) {
-  const roles = req.user?.roles || [];
+  const roles = normalizeRoles(req.user?.roles);
   if (!roles.includes('accountOwner') && !roles.includes('admin') && !roles.includes('doctor')) {
     return res.status(403).json({ error: 'Forbidden' });
   }
@@ -102,6 +103,7 @@ router.post('/', async (req, res) => {
       option.set('isDefault', !!isDefault);
     }
     await option.save(null, { useMasterKey: true });
+    if (type === 'graftButton') invalidateGraftButtonCache(req.scopedAccountId);
     res.status(201).json(type === 'graftButton' ? optionToGraftButton(option) : toJSON(option));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -126,6 +128,7 @@ router.patch('/:id', async (req, res) => {
       if (isDefault !== undefined) option.set('isDefault', !!isDefault);
     }
     await option.save(null, { useMasterKey: true });
+    if (option.get('type') === 'graftButton') invalidateGraftButtonCache(req.scopedAccountId);
     res.json(option.get('type') === 'graftButton' ? optionToGraftButton(option) : toJSON(option));
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
@@ -141,7 +144,9 @@ router.delete('/:id', async (req, res) => {
     if (toId(option.get('accountId')) !== toId(req.scopedAccountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    const wasGraft = option.get('type') === 'graftButton';
     await option.destroy({ useMasterKey: true });
+    if (wasGraft) invalidateGraftButtonCache(req.scopedAccountId);
     res.json({ success: true });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
@@ -163,6 +168,7 @@ router.post('/reorder', async (req, res) => {
       option.set('sortOrder', i);
       await option.save(null, { useMasterKey: true });
     }
+    if (type === 'graftButton') invalidateGraftButtonCache(accountId);
     const query = new Parse.Query(Option);
     query.equalTo('accountId', accountId);
     query.equalTo('type', type);
@@ -227,11 +233,18 @@ router.post('/migrate', async (req, res) => {
   }
 });
 
+/** Short-lived cache: graft lists rarely change; avoids duplicate Option queries per request burst. */
+const graftButtonCache = new Map();
+const GRAFT_CACHE_TTL_MS = 60_000;
+
 // Fetch graftButtons for an account (from Option table, fallback to GlobalDefaults)
 async function getGraftButtonsForAccount(accountId) {
   const toId = (r) => (r == null ? null : typeof r === 'string' ? r : r?.objectId ?? r?.id ?? null);
   const aid = toId(accountId);
   if (!aid) return [];
+  const now = Date.now();
+  const cached = graftButtonCache.get(aid);
+  if (cached && now - cached.t < GRAFT_CACHE_TTL_MS) return cached.data;
   try {
     const Option = Parse.Object.extend('Option');
     const opts = await new Parse.Query(Option)
@@ -240,21 +253,31 @@ async function getGraftButtonsForAccount(accountId) {
       .ascending('sortOrder')
       .ascending('label')
       .find({ useMasterKey: true });
+    let data;
     if (opts.length > 0) {
-      return opts.map((o) => ({
+      data = opts.map((o) => ({
         label: o.get('label') || '',
         intactHairs: o.get('intactHairs') ?? 0,
         totalHairs: o.get('totalHairs') ?? 1,
         isDefault: !!o.get('isDefault'),
       }));
+    } else {
+      const GlobalDefaults = Parse.Object.extend('GlobalDefaults');
+      const defaults = await new Parse.Query(GlobalDefaults).first({ useMasterKey: true });
+      const arr = defaults?.get('graftButtons') || [];
+      data = Array.isArray(arr) ? arr : [];
     }
-    const GlobalDefaults = Parse.Object.extend('GlobalDefaults');
-    const defaults = await new Parse.Query(GlobalDefaults).first({ useMasterKey: true });
-    const arr = defaults?.get('graftButtons') || [];
-    return Array.isArray(arr) ? arr : [];
+    graftButtonCache.set(aid, { t: now, data });
+    return data;
   } catch {
     return [];
   }
+}
+
+function invalidateGraftButtonCache(accountId) {
+  const toId = (r) => (r == null ? null : typeof r === 'string' ? r : r?.objectId ?? r?.id ?? null);
+  const aid = toId(accountId);
+  if (aid) graftButtonCache.delete(aid);
 }
 
 // Save graftButtons array to Option table (replaces existing graftButton options)
@@ -289,6 +312,7 @@ async function saveGraftButtonsForAccount(accountId, graftButtons) {
     opt.set('isDefault', !!b.isDefault);
     await opt.save(null, { useMasterKey: true });
   }
+  invalidateGraftButtonCache(aid);
 }
 
 module.exports = router;

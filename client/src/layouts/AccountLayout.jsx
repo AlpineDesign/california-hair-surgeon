@@ -58,17 +58,6 @@ export default function AccountLayout() {
   if (!user.roles.includes('accountOwner') && !user.roles.includes('admin') && !user.roles.includes('doctor')) return <Navigate to="/login" replace />;
   if (location.pathname.startsWith('/admin/') && !user.roles?.includes('admin')) return <Navigate to="/dashboard" replace />;
 
-  /** Doctor-only staff (not clinic owner / admin): no Team tab; block direct /team URL. */
-  const doctorLimited =
-    user.roles?.includes('doctor') && !user.roles?.includes('accountOwner') && !user.roles?.includes('admin');
-  if (doctorLimited && location.pathname.startsWith('/dashboard/team')) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  const dashboardNavItems = navItems.filter(
-    (item) => item.path !== '/dashboard/team' || !doctorLimited,
-  );
-
   const sidebarWidth = collapsed ? layout.sidebarCollapsedWidth : layout.sidebarWidth;
   const initials = [user.firstName, user.lastName]
     .filter(Boolean)
@@ -130,7 +119,7 @@ export default function AccountLayout() {
         </Box>
 
         <List sx={{ flex: 1, px: collapsed ? 0.5 : 1, pt: 1, overflow: 'auto' }}>
-          {dashboardNavItems.map(({ label, icon, path }) => (
+          {navItems.map(({ label, icon, path }) => (
             <ListItemButton
               key={path}
               component={NavLink}

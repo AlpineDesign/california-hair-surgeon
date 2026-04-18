@@ -45,9 +45,6 @@ function Section({ title, description, saveStatus, children }) {
 export default function Settings() {
   const { user } = useAuth();
   const adminCompany = useAdminCompany();
-  /** Staff doctors (not clinic owner / admin): personal settings only. */
-  const doctorLimited =
-    user?.roles?.includes('doctor') && !user?.roles?.includes('accountOwner') && !user?.roles?.includes('admin');
   const [ownerUserId, setOwnerUserId] = useState(null);
   const [ready, setReady] = useState(false);
 
@@ -89,7 +86,7 @@ export default function Settings() {
   const { status: companyStatus } = useAutoSave(
     company,
     (data) => updateMyAccount(data),
-    { enabled: ready && !doctorLimited },
+    { enabled: ready },
   );
 
   const [logoUploading, setLogoUploading] = useState(false);
@@ -101,7 +98,7 @@ export default function Settings() {
   const { status: graftStatus } = useAutoSave(
     optionsData.graftButtons,
     (graftButtons) => updateOptions({ graftButtons }),
-    { delay: 400, enabled: ready && optionsReady && !doctorLimited },
+    { delay: 400, enabled: ready && optionsReady },
   );
 
   // ── Seed personal from auth context ──────────────────────────────────────
@@ -120,10 +117,6 @@ export default function Settings() {
 
   // ── Load company from API ─────────────────────────────────────────────────
   const loadSettings = useCallback(async () => {
-    if (doctorLimited && !adminCompany?.accountId) {
-      setReady(true);
-      return;
-    }
     try {
       const data = await getSettings();
       if (data) {
@@ -149,7 +142,7 @@ export default function Settings() {
     } finally {
       setReady(true);
     }
-  }, [adminCompany?.accountId, doctorLimited]);
+  }, [adminCompany?.accountId]);
 
   // ── Load options + graft buttons from API ─────────────────────────────────
   const loadOptions = useCallback(async () => {
@@ -177,10 +170,7 @@ export default function Settings() {
   }, []);
 
   useEffect(() => { loadSettings(); }, [loadSettings]);
-  useEffect(() => {
-    if (doctorLimited) return;
-    loadOptions();
-  }, [loadOptions, doctorLimited]);
+  useEffect(() => { loadOptions(); }, [loadOptions]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handlePersonalChange = (e) => setPersonal((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -288,7 +278,6 @@ export default function Settings() {
       </Section>
 
       {/* ── Company ─────────────────────────────────────────────────────── */}
-      {!doctorLimited && (
       <Section title={S.companyTitle} description={S.companyDescription} saveStatus={companyStatus}>
         <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
 
@@ -433,10 +422,8 @@ export default function Settings() {
 
         </Box>
       </Section>
-      )}
 
       {/* ── Application Settings ─────────────────────────────────────────── */}
-      {!doctorLimited && (
       <Section title={S.applicationTitle} description={S.applicationDescription} saveStatus={graftStatus}>
         <ApplicationSettingsEditor
           mode="account"
@@ -445,7 +432,6 @@ export default function Settings() {
           onRefetch={loadOptions}
         />
       </Section>
-      )}
 
       {!adminCompany?.accountId && (
         <ResetOwnPasswordModal

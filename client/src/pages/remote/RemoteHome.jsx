@@ -14,8 +14,9 @@ import TableLoader from '../../components/TableLoader';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import { getTotalGrafts, getGoalPct, formatDateTime } from '../../utils/surgery';
 import S from '../../strings';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 
 function getGreeting(firstName) {
   const hour = new Date().getHours();
@@ -153,9 +154,9 @@ export default function RemoteHome() {
 
   useEffect(() => {
     fetchSurgeries();
-    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchSurgeries]);
+
+  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
 
   const basePath = '/remote/surgeries';
   const goToSurgery = (sid) => navigate(`${basePath}/${sid}`);

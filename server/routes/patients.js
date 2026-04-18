@@ -1,7 +1,9 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole  = require('../middleware/roles');
+const { requireOwnerOrDoctor } = require('../middleware/roles');
+const { toId } = require('../middleware/accountScope');
+const normalizeRoles = require('../lib/normalizeRoles');
 
 const Patient = Parse.Object.extend('Patient');
 const Surgery = Parse.Object.extend('Surgery');
@@ -12,15 +14,28 @@ function toJSON(obj) {
 
 router.use(authenticate);
 
+// POST before GET /:id so `/` is never mistaken for a parameterized path.
+// POST /api/patients
+router.post('/', requireOwnerOrDoctor, async (req, res) => {
+  try {
+    const patient = new Patient();
+    patient.set({ ...req.body, accountId: req.user.accountId });
+    await patient.save(null, { useMasterKey: true });
+    res.status(201).json(toJSON(patient));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/patients — admin may pass ?accountId= to view another account
 router.get('/', async (req, res) => {
   try {
     const query = new Parse.Query(Patient);
-    const accountId = req.user.roles?.includes('admin') && req.query.accountId
+    const r = normalizeRoles(req.user?.roles);
+    const accountId = r.includes('admin') && req.query.accountId
       ? req.query.accountId
       : req.user.accountId;
-    if (!accountId) return res.status(403).json({ error: 'Forbidden' });
-    query.equalTo('accountId', accountId);
+    const aid = toId(accountId);
+    if (!aid) return res.status(403).json({ error: 'Forbidden' });
+    query.equalTo('accountId', aid);
     query.descending('createdAt');
     const results = await query.find({ useMasterKey: true });
     res.json(results.map(toJSON));
@@ -32,7 +47,7 @@ router.get('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Patient);
     const patient = await query.get(req.params.id, { useMasterKey: true });
-    if (!req.user.roles.includes('admin') && patient.get('accountId') !== req.user.accountId) {
+    if (!normalizeRoles(req.user?.roles).includes('admin') && toId(patient.get('accountId')) !== toId(req.user.accountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const sQuery = new Parse.Query(Surgery);
@@ -46,22 +61,12 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/patients
-router.post('/', requireRole('accountOwner'), async (req, res) => {
-  try {
-    const patient = new Patient();
-    patient.set({ ...req.body, accountId: req.user.accountId });
-    await patient.save(null, { useMasterKey: true });
-    res.status(201).json(toJSON(patient));
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // PATCH /api/patients/:id
-router.patch('/:id', requireRole('accountOwner'), async (req, res) => {
+router.patch('/:id', requireOwnerOrDoctor, async (req, res) => {
   try {
     const query = new Parse.Query(Patient);
     const patient = await query.get(req.params.id, { useMasterKey: true });
-    if (patient.get('accountId') !== req.user.accountId) return res.status(403).json({ error: 'Forbidden' });
+    if (toId(patient.get('accountId')) !== toId(req.user.accountId)) return res.status(403).json({ error: 'Forbidden' });
     Object.entries(req.body).forEach(([k, v]) => patient.set(k, v));
     await patient.save(null, { useMasterKey: true });
     res.json(toJSON(patient));
@@ -72,11 +77,11 @@ router.patch('/:id', requireRole('accountOwner'), async (req, res) => {
 });
 
 // DELETE /api/patients/:id
-router.delete('/:id', requireRole('accountOwner'), async (req, res) => {
+router.delete('/:id', requireOwnerOrDoctor, async (req, res) => {
   try {
     const query = new Parse.Query(Patient);
     const patient = await query.get(req.params.id, { useMasterKey: true });
-    if (patient.get('accountId') !== req.user.accountId) return res.status(403).json({ error: 'Forbidden' });
+    if (toId(patient.get('accountId')) !== toId(req.user.accountId)) return res.status(403).json({ error: 'Forbidden' });
     await patient.destroy({ useMasterKey: true });
     res.json({ success: true });
   } catch (err) {

@@ -17,8 +17,9 @@ import NewSurgeryModal from './NewSurgeryModal';
 import EditSurgeryModal from './EditSurgeryModal';
 import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 12000;
 const COLUMNS = [S.patient, S.date, S.grafts, S.goal, S.actions];
 
 export default function Surgeries() {
@@ -51,9 +52,9 @@ export default function Surgeries() {
 
   useEffect(() => {
     fetchSurgeries();
-    const interval = setInterval(fetchSurgeries, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
   }, [fetchSurgeries]);
+
+  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
 
   const filtered = surgeries.filter((s) => {
     const name = s.patient?.initials || '';

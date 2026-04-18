@@ -1,8 +1,10 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole = require('../middleware/roles');
-const isBenchTechnician = requireRole.isBenchTechnician;
+const normalizeRoles = require('../lib/normalizeRoles');
+const rolesMw = require('../middleware/roles');
+const requireOwnerOrDoctor = rolesMw.requireOwnerOrDoctor;
+const isBenchTechnician = rolesMw.isBenchTechnician;
 
 const Surgery = Parse.Object.extend('Surgery');
 const Patient = Parse.Object.extend('Patient');
@@ -22,16 +24,20 @@ async function getSurgeryForAccess(id, req) {
   const surgery = await new Parse.Query(Surgery).get(id, { useMasterKey: true });
   if (!surgery) return null;
   const isAdmin = req.user.roles?.includes('admin');
-  const isAccountOwner = req.user.roles?.includes('accountOwner');
   if (isAdmin) return surgery;
   const surgeryAccountId = toId(surgery.get('accountId'));
   const userAccountId = toId(req.user.accountId);
   if (!surgeryAccountId || !userAccountId || surgeryAccountId !== userAccountId) return null;
-  if (isBenchTechnician(req)) {
-    const techIds = (surgery.get('technicianIds') || []).map((t) => toId(t)).filter(Boolean);
-    if (!techIds.includes(req.user.id)) return null;
-  }
   return surgery;
+}
+
+/** Bench tech: append user to technicianIds once they participate (activity or button prefs). */
+function mergeTechnicianIfMissing(surgery, userId) {
+  const raw = surgery.get('technicianIds') || [];
+  const ids = raw.map((t) => toId(t)).filter(Boolean);
+  if (ids.includes(userId)) return;
+  const uRef = Parse.User.createWithoutData(userId);
+  surgery.set('technicianIds', [...raw, uRef]);
 }
 
 function applyExtractionDelta(extraction, entry, delta) {
@@ -124,6 +130,7 @@ router.get('/', async (req, res) => {
       });
     }
     query.descending('createdAt');
+    query.limit(1000);
     const results = await query.find({ useMasterKey: true });
 
     const Patient = Parse.Object.extend('Patient');
@@ -148,7 +155,7 @@ router.get('/', async (req, res) => {
       accountMap = Object.fromEntries(accounts.map((a) => [a.id, { id: a.id, practiceName: a.get('practiceName') }]));
     }
 
-    let surgeries = results.map((s) => {
+    const surgeries = results.map((s) => {
       const base = { ...toJSON(s), patient: patientMap[toId(s.get('patientId'))] || null };
       if (req.user.roles?.includes('admin') && accountMap[toId(s.get('accountId'))]) {
         base.account = accountMap[s.get('accountId')];
@@ -156,20 +163,12 @@ router.get('/', async (req, res) => {
       return base;
     });
 
-    // Bench technicians only see surgeries they are assigned to
-    if (isBenchTechnician(req)) {
-      surgeries = surgeries.filter((s) => {
-        const ids = (s.technicianIds || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
-        return ids.includes(req.user.id);
-      });
-    }
-
     res.json(surgeries);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // POST /api/surgeries
-router.post('/', requireRole('accountOwner'), async (req, res) => {
+router.post('/', requireOwnerOrDoctor, async (req, res) => {
   try {
     const { patientId, surgical, graftGoal } = req.body;
     if (!patientId || typeof patientId !== 'string') {
@@ -187,15 +186,12 @@ router.post('/', requireRole('accountOwner'), async (req, res) => {
 
 // ─── Activity Log ──────────────────────────────────────────────────────────
 
-// GET /api/surgeries/:id/activities — bench techs see own when assigned; owner/admin/doctor see all
+// GET /api/surgeries/:id/activities — bench techs see only their rows; owner/admin/doctor see all
 router.get('/:id/activities', async (req, res) => {
   try {
     const surgery = await getSurgeryForAccess(req.params.id, req);
     if (!surgery) return res.status(404).json({ error: 'Not found' });
-    const isAccountOwner = req.user.roles?.includes('accountOwner');
-    const isAdmin = req.user.roles?.includes('admin');
-    const technicianIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? t);
-    const filterToOwn = isBenchTechnician(req) && technicianIds.includes(req.user.id);
+    const filterToOwn = isBenchTechnician(req);
     const query = new Parse.Query(ActivityLog);
     query.equalTo('surgeryId', surgery.id);
     if (filterToOwn) query.equalTo('userId', req.user.id);
@@ -228,6 +224,9 @@ router.post('/:id/activities', async (req, res) => {
   try {
     const surgery = await getSurgeryForAccess(req.params.id, req);
     if (!surgery) return res.status(404).json({ error: 'Not found' });
+    if (isBenchTechnician(req) && surgery.get('status') !== 'active') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const { action, payload } = req.body;
     if (!action || !['extraction', 'placement'].includes(action)) {
       return res.status(400).json({ error: 'action must be extraction or placement' });
@@ -250,6 +249,7 @@ router.post('/:id/activities', async (req, res) => {
       if (!plc.startedAt) newPlc.startedAt = new Date().toISOString();
       surgery.set('placement', newPlc);
     }
+    if (isBenchTechnician(req)) mergeTechnicianIfMissing(surgery, req.user.id);
     await surgery.save(null, { useMasterKey: true });
     // Omit withPatient/withGraftButtons — client already has them; saves two DB round-trips per click.
     res.status(201).json({ activity: toJSON(activity), surgery: toJSON(surgery) });
@@ -264,6 +264,9 @@ router.patch('/:id/activities/:activityId', async (req, res) => {
   try {
     const surgery = await getSurgeryForAccess(req.params.id, req);
     if (!surgery) return res.status(404).json({ error: 'Not found' });
+    if (isBenchTechnician(req) && surgery.get('status') !== 'active') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const activity = await new Parse.Query(ActivityLog).get(req.params.activityId, { useMasterKey: true });
     if (!activity || toId(activity.get('surgeryId')) !== surgery.id) return res.status(404).json({ error: 'Not found' });
     const { payload: newPayload } = req.body;
@@ -297,6 +300,9 @@ router.delete('/:id/activities/:activityId', async (req, res) => {
   try {
     const surgery = await getSurgeryForAccess(req.params.id, req);
     if (!surgery) return res.status(404).json({ error: 'Not found' });
+    if (isBenchTechnician(req) && surgery.get('status') !== 'active') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const activity = await new Parse.Query(ActivityLog).get(req.params.activityId, { useMasterKey: true });
     if (!activity || toId(activity.get('surgeryId')) !== surgery.id) return res.status(404).json({ error: 'Not found' });
     const action = activity.get('action');
@@ -315,18 +321,29 @@ router.delete('/:id/activities/:activityId', async (req, res) => {
 });
 
 // GET /api/surgeries/:id
+// ?light=1 — surgery fields only (no patient, no graft list). Polling / fast shell.
+// ?omitGrafts=1 — patient hydrated, graft list omitted (dashboard uses /api/settings/options).
 router.get('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Surgery);
     const surgery = await query.get(req.params.id, { useMasterKey: true });
-    if (!req.user.roles.includes('admin') && surgery.get('accountId') !== req.user.accountId) {
+    const isAdmin = normalizeRoles(req.user?.roles).includes('admin');
+    if (!isAdmin && toId(surgery.get('accountId')) !== toId(req.user.accountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    if (isBenchTechnician(req)) {
-      const techIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
-      if (!techIds.includes(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
+    const json = toJSON(surgery);
+    const light = req.query.light === '1' || req.query.light === 'true';
+    const omitGrafts = req.query.omitGrafts === '1' || req.query.omitGrafts === 'true';
+    if (light) {
+      res.json(json);
+      return;
     }
-    res.json(await withGraftButtons(await withPatient(toJSON(surgery))));
+    const withP = await withPatient(json);
+    if (omitGrafts) {
+      res.json(withP);
+      return;
+    }
+    res.json(await withGraftButtons(withP));
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -338,28 +355,30 @@ router.patch('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Surgery);
     const surgery = await query.get(req.params.id, { useMasterKey: true });
-    if (!req.user.roles?.includes('admin') && surgery.get('accountId') !== req.user.accountId) {
+    if (!req.user.roles?.includes('admin') && toId(surgery.get('accountId')) !== toId(req.user.accountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const technicianIds = (surgery.get('technicianIds') || []).map((t) => t?.id ?? t?.objectId ?? (typeof t === 'string' ? t : null)).filter(Boolean);
+    /** Bench-tech button prefs only — skip patient/graft hydration in response (saves 2+ DB round trips). */
+    let benchTechButtonConfigOnly = false;
     if (isBenchTechnician(req)) {
-      if (!technicianIds.includes(req.user.id)) return res.status(403).json({ error: 'Forbidden' });
       const allowed = Object.keys(req.body);
       if (allowed.length !== 1 || allowed[0] !== 'technicianButtonConfigs') {
         return res.status(403).json({ error: 'Technicians can only update their button configuration' });
       }
       const configs = req.body.technicianButtonConfigs;
       if (!Array.isArray(configs)) return res.status(400).json({ error: 'technicianButtonConfigs must be an array' });
-      const toId = (c) => (typeof c.userId === 'string' ? c.userId : (c.userId?.objectId ?? c.userId?.id ?? ''));
-      const myEntry = configs.find((c) => toId(c) === req.user.id);
+      const cfgToId = (c) => (typeof c.userId === 'string' ? c.userId : (c.userId?.objectId ?? c.userId?.id ?? ''));
+      const myEntry = configs.find((c) => cfgToId(c) === req.user.id);
       if (!myEntry || !Array.isArray(myEntry.labels)) {
         return res.status(400).json({ error: 'Must include your own config with labels array' });
       }
       const existing = surgery.get('technicianButtonConfigs') || [];
-      const merged = existing.filter((c) => toId(c) !== req.user.id);
+      const merged = existing.filter((c) => cfgToId(c) !== req.user.id);
       merged.push({ userId: req.user.id, labels: myEntry.labels });
       surgery.set('technicianButtonConfigs', merged);
       req.body = { technicianButtonConfigs: merged };
+      mergeTechnicianIfMissing(surgery, req.user.id);
+      benchTechButtonConfigOnly = true;
     }
     Object.entries(req.body).forEach(([k, v]) => surgery.set(k, v));
     // When starting surgery, ensure extraction and placement structures exist
@@ -374,6 +393,10 @@ router.patch('/:id', async (req, res) => {
       }
     }
     await surgery.save(null, { useMasterKey: true });
+    if (benchTechButtonConfigOnly) {
+      res.json(toJSON(surgery));
+      return;
+    }
     res.json(await withGraftButtons(await withPatient(toJSON(surgery))));
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
@@ -386,7 +409,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Surgery);
     const surgery = await query.get(req.params.id, { useMasterKey: true });
-    if (!req.user.roles.includes('admin') && surgery.get('accountId') !== req.user.accountId) {
+    if (!req.user.roles.includes('admin') && toId(surgery.get('accountId')) !== toId(req.user.accountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await surgery.destroy({ useMasterKey: true });

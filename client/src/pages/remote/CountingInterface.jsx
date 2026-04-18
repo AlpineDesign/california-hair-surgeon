@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Box, Button, Typography, Paper, IconButton, Chip,
+  Box, Button, Typography, Paper, IconButton, Chip, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Divider,
   List, ListItem, ListItemText, ListItemSecondaryAction,
@@ -24,6 +24,8 @@ import BulkAddModal from '../../components/BulkAddModal';
 import S from '../../strings';
 
 const LONG_PRESS_MS = 500;
+/** Only while waiting for the doctor to start — same visibility rules as usePollWhileVisible. */
+const POLL_MS_PENDING_START = 4000;
 
 function formatTime(dateStr) {
   if (!dateStr) return '—';
@@ -90,6 +92,26 @@ export default function CountingInterface() {
     }
   }, [id]);
 
+  /** Light refresh — updates status/startedAt when doctor starts the case (full graft list kept from initial load). */
+  const pollSurgeryLight = useCallback(async () => {
+    if (!id) return;
+    try {
+      const data = await getSurgery(id, { light: '1' });
+      setSurgery((prev) => {
+        if (!data) return prev;
+        if (!prev) return data;
+        return {
+          ...prev,
+          ...data,
+          patient: prev.patient ?? data.patient,
+          graftButtons: prev.graftButtons ?? data.graftButtons,
+        };
+      });
+    } catch (err) {
+      console.error('Failed to refresh surgery', err);
+    }
+  }, [id]);
+
   const fetchActivities = useCallback(async () => {
     if (!id) return;
     try {
@@ -102,6 +124,41 @@ export default function CountingInterface() {
 
   useEffect(() => { fetchSurgery(); }, [fetchSurgery]);
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
+
+  const surgeryPendingStart =
+    surgery != null &&
+    surgery.status !== 'active' &&
+    surgery.status !== 'completed';
+
+  useEffect(() => {
+    if (!surgeryPendingStart) return undefined;
+    let timer = null;
+    const tick = () => pollSurgeryLight();
+    const arm = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        timer = setInterval(tick, POLL_MS_PENDING_START);
+      }
+    };
+    const onVisibility = () => {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState === 'hidden') {
+        if (timer) clearInterval(timer);
+        timer = null;
+      } else {
+        tick();
+        arm();
+      }
+    };
+    arm();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [surgeryPendingStart, pollSurgeryLight]);
+
   useEffect(() => {
     if (activityModal) {
       setActivityEditLabel(activityModal.payload?.label ?? '');
@@ -121,7 +178,7 @@ export default function CountingInterface() {
   const handleBack = () => navigate('/remote/surgeries');
 
   const handleButtonClick = async (btn) => {
-    if (!id || extractionCompleted) return;
+    if (!id || surgeryPendingStart || extractionCompleted) return;
     triggerLightHaptic();
 
     const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -224,8 +281,8 @@ export default function CountingInterface() {
       (c) => toUserId(c.userId) !== myUserId
     );
     configs.push({ userId: myUserId, labels });
-    await updateSurgery(id, { technicianButtonConfigs: configs });
-    await fetchSurgery();
+    const updated = await updateSurgery(id, { technicianButtonConfigs: configs });
+    setSurgery((prev) => mergeSurgeryPatch(prev, updated));
   };
 
   const clearLongPressTimer = () => {
@@ -236,7 +293,7 @@ export default function CountingInterface() {
   };
 
   const handleGraftPointerDown = (btn) => () => {
-    if (extractionCompleted) return;
+    if (surgeryPendingStart || extractionCompleted) return;
     longPressConsumedRef.current = false;
     clearLongPressTimer();
     longPressTimerRef.current = window.setTimeout(() => {
@@ -250,7 +307,7 @@ export default function CountingInterface() {
 
   const handleGraftPointerUp = (btn) => () => {
     clearLongPressTimer();
-    if (extractionCompleted) return;
+    if (surgeryPendingStart || extractionCompleted) return;
     if (longPressConsumedRef.current) {
       longPressConsumedRef.current = false;
       return;
@@ -263,7 +320,7 @@ export default function CountingInterface() {
   };
 
   const handleBulkSave = (count, btn) => {
-    if (!id || extractionCompleted) {
+    if (!id || surgeryPendingStart || extractionCompleted) {
       throw new Error('skip');
     }
     triggerLightHaptic();
@@ -392,7 +449,7 @@ export default function CountingInterface() {
           <Button
             variant="outlined"
             size="small"
-            disabled={extractionCompleted || activeButtons.length === 0}
+            disabled={surgeryPendingStart || extractionCompleted || activeButtons.length === 0}
             onClick={() => {
               setBulkModalInitialLabel('');
               setBulkModalOpen(true);
@@ -429,8 +486,14 @@ export default function CountingInterface() {
             justifyContent: 'center',
           }}
         >
+          {surgeryPendingStart && (
+            <Alert severity="info" sx={{ width: '100%', maxWidth: 560, mb: 3 }}>
+              <Typography variant="subtitle2" fontWeight={700}>{S.techDashWaitForStartTitle}</Typography>
+              <Typography variant="body2">{S.techDashWaitForStartBody}</Typography>
+            </Alert>
+          )}
           {activeButtons.length === 0 ? (
-            <Typography color="text.secondary">No graft buttons configured. Ask your account owner to add them in Settings.</Typography>
+            <Typography color="text.secondary">{S.techEditButtonsConfigureHint}</Typography>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
               {buttonRows.map((row, ri) => (
@@ -440,7 +503,7 @@ export default function CountingInterface() {
                       key={btn.label}
                       variant="contained"
                       color="primary"
-                      disabled={extractionCompleted}
+                      disabled={surgeryPendingStart || extractionCompleted}
                       onPointerDown={handleGraftPointerDown(btn)}
                       onPointerUp={handleGraftPointerUp(btn)}
                       onPointerLeave={handleGraftPointerLeave}
@@ -555,10 +618,20 @@ export default function CountingInterface() {
                   <ListItem
                     key={a._clientKey ?? a.id ?? a.objectId ?? `${a.payload?.label}-${a.createdAt}`}
                     dense
-                    onClick={() => a.action === 'extraction' && !extractionCompleted && !a._optimistic && setActivityModal(a)}
+                    onClick={() =>
+                      a.action === 'extraction' &&
+                      !surgeryPendingStart &&
+                      !extractionCompleted &&
+                      !a._optimistic &&
+                      setActivityModal(a)}
                     sx={{
                       cursor:
-                        a.action === 'extraction' && !extractionCompleted && !a._optimistic ? 'pointer' : 'default',
+                        a.action === 'extraction' &&
+                        !surgeryPendingStart &&
+                        !extractionCompleted &&
+                        !a._optimistic
+                          ? 'pointer'
+                          : 'default',
                       py: 0.5,
                       px: 0,
                       borderBottom: '1px solid',
@@ -574,12 +647,18 @@ export default function CountingInterface() {
                             opacity: 1,
                           }),
                       '&:hover':
-                        a.action === 'extraction' && !extractionCompleted && !a._optimistic
+                        a.action === 'extraction' &&
+                        !surgeryPendingStart &&
+                        !extractionCompleted &&
+                        !a._optimistic
                           ? { bgcolor: 'action.hover' }
                           : {},
                     }}
                     secondaryAction={
-                      a.action === 'extraction' && !extractionCompleted && !a._optimistic && (
+                      a.action === 'extraction' &&
+                      !surgeryPendingStart &&
+                      !extractionCompleted &&
+                      !a._optimistic && (
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); setActivityModal(a); }}>
                           <MoreVertIcon fontSize="small" />
                         </IconButton>

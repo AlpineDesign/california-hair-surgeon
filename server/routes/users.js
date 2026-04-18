@@ -1,14 +1,39 @@
 const router = require('express').Router();
 const { Parse } = require('../parse');
 const authenticate = require('../middleware/auth');
-const requireRole  = require('../middleware/roles');
+const { requireOwnerOrDoctor } = require('../middleware/roles');
 const { toId } = require('../middleware/accountScope');
+const normalizeRoles = require('../lib/normalizeRoles');
 
 const TEAM_ROLES = ['accountOwner', 'technician', 'doctor', 'user']; // 'user' kept for backward compat
+
+/** Fields needed for team tables — avoids loading full User rows from Mongo. */
+const TEAM_LIST_SELECT = [
+  'firstName',
+  'lastName',
+  'username',
+  'email',
+  'roles',
+  'lastActiveAt',
+  'accountId',
+];
+
+const TEAM_LIST_LIMIT = 500;
 
 function toJSON(user) {
   const { password, sessionToken, authData, ...rest } = user.toJSON();
   return { id: user.id, ...rest };
+}
+
+async function findTeamUsersForAccount(aid) {
+  const query = new Parse.Query(Parse.User);
+  query.equalTo('accountId', aid);
+  query.containedIn('roles', TEAM_ROLES);
+  query.ascending('firstName');
+  query.limit(TEAM_LIST_LIMIT);
+  query.select(...TEAM_LIST_SELECT);
+  const users = await query.find({ useMasterKey: true });
+  return users.map(toJSON);
 }
 
 router.use(authenticate);
@@ -33,39 +58,35 @@ router.patch('/me', async (req, res) => {
 // GET /api/users/team — list team members; admin may pass ?accountId= to view another account
 router.get('/team', async (req, res) => {
   try {
-    const accountId = req.user.roles?.includes('admin') && req.query.accountId
+    const r0 = normalizeRoles(req.user?.roles);
+    const accountId = r0.includes('admin') && req.query.accountId
       ? req.query.accountId
       : req.user.accountId;
-    if (!accountId) return res.status(403).json({ error: 'Forbidden' });
-    const query = new Parse.Query(Parse.User);
-    query.equalTo('accountId', accountId);
-    query.containedIn('roles', TEAM_ROLES);
-    query.ascending('firstName');
-    const users = await query.find({ useMasterKey: true });
-    res.json(users.map(toJSON));
+    const aid = toId(accountId);
+    if (!aid) return res.status(403).json({ error: 'Forbidden' });
+    const users = await findTeamUsersForAccount(aid);
+    res.json(users);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // GET /api/users[?role=...][?accountId=] — list team members; admin may pass accountId
 router.get('/', async (req, res) => {
   try {
-    const accountId = req.user.roles?.includes('admin') && req.query.accountId
+    const r = normalizeRoles(req.user?.roles);
+    const accountId = r.includes('admin') && req.query.accountId
       ? req.query.accountId
       : req.user.accountId;
-    if (!accountId) return res.status(403).json({ error: 'Forbidden' });
-    if (!req.user.roles?.includes('admin') && !req.user.roles?.includes('accountOwner') && !req.user.roles?.includes('doctor')) {
+    const aid = toId(accountId);
+    if (!aid) return res.status(403).json({ error: 'Forbidden' });
+    if (!r.includes('admin') && !r.includes('accountOwner') && !r.includes('doctor')) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const query = new Parse.Query(Parse.User);
-    query.equalTo('accountId', accountId);
-    query.containedIn('roles', TEAM_ROLES);
-    query.ascending('firstName');
-    const users = await query.find({ useMasterKey: true });
-    res.json(users.map(toJSON));
+    const users = await findTeamUsersForAccount(aid);
+    res.json(users);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.use(requireRole('accountOwner'));
+router.use(requireOwnerOrDoctor);
 
 // POST /api/users — create a team member (technician or doctor)
 router.post('/', async (req, res) => {
@@ -98,10 +119,21 @@ router.patch('/:id', async (req, res) => {
     const query = new Parse.Query(Parse.User);
     const user = await query.get(req.params.id, { useMasterKey: true });
     const userAid = toId(user.get('accountId'));
-    const isOwner = req.user.roles?.includes('accountOwner') && toId(req.user.accountId) === userAid;
+    const sameAccount = toId(req.user.accountId) === userAid;
+    const isClinicLead =
+      sameAccount &&
+      (req.user.roles?.includes('accountOwner') || req.user.roles?.includes('doctor'));
     const scopeHeader = req.headers['x-scope-account-id']?.trim();
     const isAdminScoped = req.user.roles?.includes('admin') && scopeHeader && scopeHeader === userAid;
-    if (!isOwner && !isAdminScoped) return res.status(403).json({ error: 'Forbidden' });
+    if (!isClinicLead && !isAdminScoped) return res.status(403).json({ error: 'Forbidden' });
+    const targetRoles = user.get('roles') || [];
+    if (
+      targetRoles.includes('accountOwner') &&
+      !req.user.roles?.includes('accountOwner') &&
+      !req.user.roles?.includes('admin')
+    ) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const { firstName, lastName, username, email, role, password } = req.body;
     if (firstName !== undefined) user.set('firstName', firstName);
     if (lastName  !== undefined) user.set('lastName',  lastName);
@@ -122,7 +154,17 @@ router.delete('/:id', async (req, res) => {
   try {
     const query = new Parse.Query(Parse.User);
     const user = await query.get(req.params.id, { useMasterKey: true });
-    if (user.get('accountId') !== req.user.accountId) return res.status(403).json({ error: 'Forbidden' });
+    if (toId(user.get('accountId')) !== toId(req.user.accountId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const targetRoles = user.get('roles') || [];
+    if (
+      targetRoles.includes('accountOwner') &&
+      !req.user.roles?.includes('accountOwner') &&
+      !req.user.roles?.includes('admin')
+    ) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     await user.destroy({ useMasterKey: true });
     res.json({ success: true });
   } catch (err) {
