@@ -19,6 +19,9 @@ module.exports = {
     appId: 'californiaHarSurgeon',
     masterKey: 'sk_live_MWrJ5HbowOzbTcNnt0bMazqGaXj8D4w5',
     serverURL: IS_DEVELOPMENT ? `http://localhost:${port}/parse` : `${productionBaseUrl}/parse`,
+    // Parse defaults to masterKey only from localhost; that breaks when the Node SDK calls the public URL (e.g. Cloud Run).
+    // Master key is already a strong secret; allow from any IP = disable IP allowlist (both stacks per Parse docs).
+    masterKeyIps: ['0.0.0.0/0', '::/0'],
   },
 
   clientUrl: IS_DEVELOPMENT ? 'http://localhost:3000' : productionBaseUrl,

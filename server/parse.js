@@ -6,7 +6,7 @@ const Parse = require('parse/node');
 const config = require('./config');
 
 module.exports = async function mountParseServer(app) {
-  const { appId, masterKey, serverURL } = config.parse;
+  const { appId, masterKey, serverURL, masterKeyIps } = config.parse;
 
   const filesAdapter = config.gcs?.bucket && config.gcs?.projectId
     ? {
@@ -25,6 +25,7 @@ module.exports = async function mountParseServer(app) {
     appId,
     masterKey,
     serverURL,
+    masterKeyIps,
     allowClientClassCreation: false,
     filesAdapter,
   });
