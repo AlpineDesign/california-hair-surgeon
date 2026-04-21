@@ -7,13 +7,28 @@ export function mergeSurgeryPatch(prev, patch) {
   return prev ? { ...prev, ...patch } : patch;
 }
 
+/**
+ * Total grafts from surgery.extraction.entries (rollup on the Surgery document).
+ * Used for list/progress rows where activities are not loaded — keeps payloads small.
+ * Bench counting updates entries in lockstep with ActivityLog on each click.
+ */
 export function getTotalGrafts(surgery) {
   const entries = surgery?.extraction?.entries ?? [];
   return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
 }
 
+/**
+ * Grafts extracted toward the goal — prefers API `extractionGraftCount` (ActivityLog count)
+ * so list/progress bars match bench clicks when extraction.entries drifts.
+ */
+export function getGraftProgressCurrent(surgery) {
+  const n = surgery?.extractionGraftCount;
+  if (typeof n === 'number' && !Number.isNaN(n) && n >= 0) return n;
+  return getTotalGrafts(surgery);
+}
+
 export function getGoalPct(surgery) {
-  const total = getTotalGrafts(surgery);
+  const total = getGraftProgressCurrent(surgery);
   const goal = surgery?.graftGoal || 0;
   if (!goal) return '—';
   return `${Math.round((total / goal) * 100)}%`;
@@ -127,6 +142,48 @@ export function getTechnicianDisplayName(user) {
   return name || user.username || '—';
 }
 
+const GRAFT_LABEL_FRACTION_RE = /^(\d+)\s*\/\s*(\d+)$/;
+
+/** Parse numerator/denominator from a graft button label "a/b", or from intact/total hairs. */
+export function parseGraftFractionFromButton(btn) {
+  const label = (btn?.label || '').trim();
+  const m = GRAFT_LABEL_FRACTION_RE.exec(label);
+  if (m) {
+    return { num: parseInt(m[1], 10), den: parseInt(m[2], 10) };
+  }
+  const th = Number(btn?.totalHairs);
+  const ih = Number(btn?.intactHairs);
+  const den = Number.isFinite(th) && th > 0 ? th : 1;
+  const num = Number.isFinite(ih) ? ih : 0;
+  return { num, den };
+}
+
+/**
+ * Tech counting grid: one row per denominator (graft type); within each row, numerator descending.
+ */
+export function groupGraftButtonsByDenominatorRows(buttons) {
+  if (!buttons?.length) return [];
+  const parsed = buttons.map((btn) => ({ btn, ...parseGraftFractionFromButton(btn) }));
+  const byDen = new Map();
+  for (const p of parsed) {
+    const d = p.den;
+    if (!byDen.has(d)) byDen.set(d, []);
+    byDen.get(d).push(p);
+  }
+  const dens = [...byDen.keys()].sort((a, b) => a - b);
+  return dens.map((d) =>
+    byDen
+      .get(d)
+      .sort((a, b) => b.num - a.num)
+      .map((p) => p.btn),
+  );
+}
+
+/** Flat list in graft-type order (pickers, modals, chip rows). */
+export function sortGraftButtonsByGraftType(buttons) {
+  return groupGraftButtonsByDenominatorRows(buttons).flat();
+}
+
 /** User id string from an activity log row (Pointer or string in JSON). */
 export function getActivityUserId(a) {
   if (!a) return null;
@@ -233,6 +290,56 @@ export function getTechnicianStatsFromActivities(activities) {
   return result;
 }
 
+/** Per-technician stats row for the logged-in user (tries id and objectId — Parse keys vary). */
+export function getTechnicianStatsRowForUser(technicianStats, user) {
+  if (!technicianStats || !user) return {};
+  for (const k of [user.id, user.objectId].filter(Boolean)) {
+    if (technicianStats.has(k)) return technicianStats.get(k);
+  }
+  return {};
+}
+
+/** Value from a Map keyed by user id (e.g. byTech) for the logged-in user. */
+export function getMapValueForUser(map, user) {
+  if (!map || !user) return undefined;
+  for (const k of [user.id, user.objectId].filter(Boolean)) {
+    if (map.has(k)) return map.get(k);
+  }
+  return undefined;
+}
+
+/**
+ * Pooled extraction stats from the activity log (same rules as per-technician aggregation).
+ * Includes every extraction activity with a label, even if userId is missing — use for report
+ * "Total" rows/cards so they match the click log, not only surgery.extraction.entries.
+ */
+export function getAggregateExtractionStatsFromActivities(activities) {
+  let graftCount = 0;
+  let totalHairs = 0;
+  let totalIntact = 0;
+  let transectedGrafts = 0;
+  let singleGrafts = 0;
+  for (const a of activities || []) {
+    if (a.action !== 'extraction' || a.payload?.label == null) continue;
+    const th = a.payload.totalHairs ?? 0;
+    const ih = a.payload.intactHairs ?? 0;
+    graftCount += 1;
+    totalHairs += th;
+    totalIntact += ih;
+    if (ih < (th || 1)) transectedGrafts += 1;
+    if (a.payload.label === '1/1') singleGrafts += 1;
+  }
+  const transectedHairs = totalHairs - totalIntact;
+  return {
+    graftCount,
+    hairCount: totalIntact,
+    potHair: totalHairs,
+    transRateHair: totalHairs ? (transectedHairs / totalHairs) * 100 : 0,
+    transRateGrafts: graftCount ? (transectedGrafts / graftCount) * 100 : 0,
+    singleGrafts,
+  };
+}
+
 /**
  * Per-technician, per-graft-type counts from extraction activities.
  * Returns { byTech: Map<userId, Map<label, count>>, graftTypes: string[], techIds: string[] }
@@ -250,13 +357,46 @@ export function getGraftCountsByTechnician(activities, graftButtons = []) {
     const m = byTech.get(uid);
     m.set(a.payload.label, (m.get(a.payload.label) || 0) + 1);
   }
-  const graftTypes = graftButtons.length
-    ? graftButtons.map((b) => b.label)
+  // Include every label seen in activities, not only current graftButtons (labels can differ after option changes).
+  const buttonOrder = graftButtons.map((b) => b.label).filter(Boolean);
+  const extraFromActivities = [...labelSet].filter((l) => !buttonOrder.includes(l)).sort();
+  const graftTypes = buttonOrder.length
+    ? [...buttonOrder, ...extraFromActivities]
     : [...labelSet].sort();
   return { byTech, graftTypes, techIds: [...techIds] };
 }
 
-/** Report stats derived from extraction.entries */
+/**
+ * Per–graft-type extraction counts from the activity log only (all technicians, all clicks).
+ * Prefer this for report row totals when activities are loaded so totals match per-tech cells.
+ */
+export function getExtractionCountsByLabel(activities) {
+  const m = new Map();
+  for (const a of activities || []) {
+    if (a.action !== 'extraction' || a.payload?.label == null) continue;
+    const lbl = a.payload.label;
+    m.set(lbl, (m.get(lbl) || 0) + 1);
+  }
+  return m;
+}
+
+/**
+ * Graft-type row labels for report tables: preserves button/activity order but omits types with zero extractions.
+ */
+export function getGraftTypeLabelsForReport(graftTypes, entries, extractionCountByLabel) {
+  const order = graftTypes.length
+    ? graftTypes
+    : entries?.length
+      ? entries.map((e) => e.label).filter(Boolean)
+      : [...extractionCountByLabel.keys()].sort();
+  return order.filter((label) => (extractionCountByLabel.get(label) ?? 0) > 0);
+}
+
+/**
+ * Report stats from extraction.entries (surgery rollup). Prefer
+ * getAggregateExtractionStatsFromActivities when activities are available for UI that must
+ * match the click log.
+ */
 export function getReportStats(surgery) {
   const entries = surgery?.extraction?.entries ?? [];
   const totalGrafts = entries.reduce((s, e) => s + (e.count ?? 0), 0);

@@ -13,7 +13,7 @@ import GraftProgressBar from '../../components/GraftProgressBar';
 import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import TableLoader from '../../components/TableLoader';
-import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
+import { getGraftProgressCurrent, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 
 const COLUMNS = [S.company, S.patient, S.date, S.grafts, S.goal, 'Status'];
@@ -24,7 +24,7 @@ function surgeriesToCsv(surgeries) {
     s.account?.practiceName || '',
     s.patient?.initials || '',
     formatDate(s.startedAt || s.createdAt),
-    getTotalGrafts(s),
+    getGraftProgressCurrent(s),
     s.graftGoal ?? '',
     s.status || '',
   ]);
@@ -154,7 +154,7 @@ export default function AdminSurgeries() {
                     key={s.id || s.objectId}
                     hover
                     onClick={() => {
-                      if (canOpen) navigate(`/admin/clinics/${aid}/surgeries/${sid}`);
+                      if (canOpen) navigate(`/admin/clinics/${aid}/surgeries/${sid}`, { state: { surgeryPreview: s } });
                     }}
                     sx={{ cursor: canOpen ? 'pointer' : 'default' }}
                   >
@@ -172,7 +172,7 @@ export default function AdminSurgeries() {
                       <Typography variant="body2">{formatDate(s.startedAt || s.createdAt)}</Typography>
                     </TableCell>
                     <TableCell sx={{ minWidth: 200 }}>
-                      <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
+                      <GraftProgressBar current={getGraftProgressCurrent(s)} goal={s.graftGoal ?? 0} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>

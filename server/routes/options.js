@@ -49,6 +49,21 @@ function optionToGraftButton(opt) {
   };
 }
 
+function normalizeGraftLabel(label) {
+  return (label == null ? '' : String(label)).trim();
+}
+
+/** True if another graft Option (same account) already uses this label. */
+async function graftLabelTaken(accountId, label, excludeObjectId) {
+  const q = new Parse.Query(Option);
+  q.equalTo('accountId', accountId);
+  q.equalTo('type', 'graftButton');
+  q.equalTo('label', label);
+  const found = await q.find({ useMasterKey: true });
+  if (!excludeObjectId) return found.length > 0;
+  return found.some((o) => o.id !== excludeObjectId);
+}
+
 // GET /api/options — list options for current account, grouped by type
 router.get('/', async (req, res) => {
   try {
@@ -84,6 +99,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'type and label required' });
     }
     let nextSortOrder = sortOrder;
+    const trimmedLabel = label.trim();
+    if (type === 'graftButton' && (await graftLabelTaken(req.scopedAccountId, trimmedLabel, null))) {
+      return res.status(409).json({ error: 'A graft button with this label already exists for this account' });
+    }
     if (nextSortOrder === undefined || nextSortOrder === null) {
       const existing = await new Parse.Query(Option)
         .equalTo('accountId', req.scopedAccountId)
@@ -95,7 +114,7 @@ router.post('/', async (req, res) => {
     const option = new Option();
     option.set('accountId', req.scopedAccountId);
     option.set('type', type);
-    option.set('label', label.trim());
+    option.set('label', trimmedLabel);
     option.set('sortOrder', nextSortOrder);
     if (type === 'graftButton') {
       option.set('intactHairs', intactHairs ?? 0);
@@ -120,6 +139,12 @@ router.patch('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { label, sortOrder, intactHairs, totalHairs, isDefault } = req.body;
+    if (option.get('type') === 'graftButton') {
+      const nextLbl = label !== undefined ? normalizeGraftLabel(label) : normalizeGraftLabel(option.get('label'));
+      if (await graftLabelTaken(req.scopedAccountId, nextLbl, option.id)) {
+        return res.status(409).json({ error: 'A graft button with this label already exists for this account' });
+      }
+    }
     if (label !== undefined) option.set('label', label.trim());
     if (sortOrder !== undefined) option.set('sortOrder', Number(sortOrder));
     if (option.get('type') === 'graftButton') {
@@ -292,16 +317,15 @@ async function saveGraftButtonsForAccount(accountId, graftButtons) {
     .find({ useMasterKey: true });
   if (existing.length > 0) await Parse.Object.destroyAll(existing, { useMasterKey: true });
   if (!Array.isArray(graftButtons) || graftButtons.length === 0) return;
-  // Dedupe by label (keep first) to prevent duplicates from ever persisting
   const seen = new Set();
-  const deduped = graftButtons.filter((b) => {
+  const uniqueByLabel = graftButtons.filter((b) => {
     const lbl = (b.label || '').trim();
     if (!lbl || seen.has(lbl)) return false;
     seen.add(lbl);
     return true;
   });
-  for (let i = 0; i < deduped.length; i++) {
-    const b = deduped[i];
+  for (let i = 0; i < uniqueByLabel.length; i++) {
+    const b = uniqueByLabel[i];
     const opt = new Option();
     opt.set('accountId', aid);
     opt.set('type', 'graftButton');

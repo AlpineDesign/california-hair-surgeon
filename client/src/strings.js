@@ -123,6 +123,8 @@ const strings = {
   resumeTimer: 'Resume',
   completePlacement: 'Complete Placement',
   statusNotStarted: 'NOT STARTED',
+  techDashSummary: 'Summary',
+  techDashActivity: 'Activity',
   techDashWaitForStartTitle: 'Surgery not started',
   techDashWaitForStartBody:
     'Your doctor must start this surgery from the dashboard before you can log grafts.',
@@ -150,7 +152,6 @@ const strings = {
   graftType: 'Graft type',
   viewReport: 'View Report',
   exportPdf: 'Export PDF',
-  placementActivity: 'Placement: +1',
 
   reportTitle: 'HAIR TRANSPLANT SURGERY REPORT',
   patientInfo: 'Patient Information',

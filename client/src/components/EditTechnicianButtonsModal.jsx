@@ -6,18 +6,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import IconButton from '@mui/material/IconButton';
 import S from '../strings';
-
-/** One chip per label — account can have duplicate Option rows with the same label. */
-function dedupeGraftButtonsByLabel(buttons) {
-  const seen = new Set();
-  return (buttons || []).filter((b) => {
-    const label = b?.label;
-    if (label == null || label === '') return false;
-    if (seen.has(label)) return false;
-    seen.add(label);
-    return true;
-  });
-}
+import { sortGraftButtonsByGraftType } from '../utils/surgery';
 
 /**
  * Modal for technician to add/remove buttons from their view for this surgery.
@@ -57,7 +46,7 @@ export default function EditTechnicianButtonsModal({ open, onClose, graftButtons
     }
   };
 
-  const uniqueButtons = dedupeGraftButtonsByLabel(graftButtons);
+  const uniqueButtons = sortGraftButtonsByGraftType(graftButtons);
   const available = uniqueButtons.filter((b) => !selected.includes(b.label));
   const selectedButtons = uniqueButtons.filter((b) => selected.includes(b.label));
 

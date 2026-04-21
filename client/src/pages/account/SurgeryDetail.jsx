@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Box, Typography, Button, Autocomplete, TextField, Chip,
-  Paper, CircularProgress, MenuItem, IconButton, Link,
+  Paper, MenuItem, IconButton, Link, Skeleton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -17,14 +17,17 @@ import { getTechnicians, getDoctors } from '../../api/users';
 import { getOptions, getSettings } from '../../api/settings';
 import GraftProgressBar from '../../components/GraftProgressBar';
 import {
-  getTotalGrafts, formatDate, formatStartedAt, formatElapsedMs, getPhaseElapsedMs,
-  getReportStats, formatElapsedForReport, getTechnicianStatsFromActivities, getGraftCountsByTechnician,
+  formatDate, formatStartedAt, formatElapsedMs, getPhaseElapsedMs,
+  getGraftProgressCurrent,
+  getAggregateExtractionStatsFromActivities, getExtractionCountsByLabel, getGraftTypeLabelsForReport,
+  formatElapsedForReport,
+  getTechnicianStatsFromActivities, getGraftCountsByTechnician,
   getReportTechnicianColumns,
   getSurgeryTotalMs, getTechnicianDisplayName, getSelectedTechnicians, getExtractionEntries,
   formatReportDateTime, formatReportTime, formatDateMmDdYyyy,
   mergeSurgeryPatch,
 } from '../../utils/surgery';
-import StatusBadge from '../../components/StatusBadge';
+import StatusBadge, { STATUS_CHIP_SX } from '../../components/StatusBadge';
 import PatientModal from '../../components/PatientModal';
 import EditTechniciansModal from '../../components/EditTechniciansModal';
 import EditDoctorModal from '../../components/EditDoctorModal';
@@ -54,26 +57,37 @@ const SURGICAL_FIELDS = [
 
 const POLL_INTERVAL_MS = 12000;
 
-function useSurgeryActivities(surgeryId, refreshTrigger = 0) {
+function useSurgeryActivities(surgeryId, refreshTrigger = 0, { poll = true } = {}) {
   const [activities, setActivities] = useState([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(() => Boolean(surgeryId));
+  const firstReadyForId = useRef(null);
+
   const load = useCallback(async () => {
     if (!surgeryId) return;
+    const showLoading = firstReadyForId.current !== surgeryId;
+    if (showLoading) setActivitiesLoading(true);
     try {
       const data = await getActivities(surgeryId);
       setActivities(Array.isArray(data) ? data : []);
     } catch {
       setActivities([]);
+    } finally {
+      if (showLoading) {
+        setActivitiesLoading(false);
+        firstReadyForId.current = surgeryId;
+      }
     }
   }, [surgeryId]);
 
   useEffect(() => {
     if (!surgeryId) return;
+    firstReadyForId.current = null;
     load();
   }, [surgeryId, load, refreshTrigger]);
 
-  usePollWhileVisible(load, POLL_INTERVAL_MS);
+  usePollWhileVisible(load, POLL_INTERVAL_MS, poll);
 
-  return activities;
+  return [activities, activitiesLoading];
 }
 
 function EditableDetailRow({ label, value, fieldKey, section, editing, onEdit, onSave, onCancel, options = [] }) {
@@ -301,7 +315,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
   const [doctorModalOpen, setDoctorModalOpen] = useState(false);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [activitiesRefresh, setActivitiesRefresh] = useState(0);
-  const activities = useSurgeryActivities(surgeryId, activitiesRefresh);
+  const [activities] = useSurgeryActivities(surgeryId, activitiesRefresh);
 
   const patient = surgery?.patient ?? {};
   const extractionStarted = surgery?.extraction?.startedAt;
@@ -319,10 +333,16 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
   const placementElapsed = getPhaseElapsedMs(surgery?.placement);
 
   const entries = getExtractionEntries(surgery, options);
-  const totalExtracted = getTotalGrafts(surgery);
-  const extractionStats = getReportStats(surgery);
+  const activityReportStats = getAggregateExtractionStatsFromActivities(activities);
+  const totalExtracted = Math.max(
+    getGraftProgressCurrent(surgery),
+    activityReportStats.graftCount ?? 0,
+  );
   const goal = surgery?.graftGoal ?? 0;
   const technicianStats = getTechnicianStatsFromActivities(activities);
+  const graftButtonsForCols = surgery?.graftButtons ?? options?.graftButtons ?? [];
+  const { techIds } = getGraftCountsByTechnician(activities, graftButtonsForCols);
+  const techColumns = getReportTechnicianColumns(technicians, surgery, activities, techIds);
 
   const handleIncrementExtraction = async (index) => {
     const entry = entries[index];
@@ -340,94 +360,162 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
   };
 
   const handleStartExtraction = async () => {
+    const extBefore = { ...(surgery?.extraction || {}) };
+    const startedAt = new Date().toISOString();
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      extraction: {
+        ...(prev?.extraction || {}),
+        startedAt,
+        completedAt: null,
+        accumulatedElapsedMs: 0,
+        resumedAt: null,
+      },
+    }));
     try {
       const updated = await updateExtraction(surgeryId, {
-        startedAt: new Date().toISOString(),
+        startedAt,
         completedAt: null,
         accumulatedElapsedMs: 0,
         resumedAt: null,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to start extraction', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { extraction: extBefore }));
     }
   };
 
   const handleStartPlacement = async () => {
+    const plcBefore = { ...(surgery?.placement || {}) };
+    const startedAt = new Date().toISOString();
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      placement: {
+        ...(prev?.placement || {}),
+        startedAt,
+        completedAt: null,
+        accumulatedElapsedMs: 0,
+        resumedAt: null,
+      },
+    }));
     try {
       const updated = await updatePlacement(surgeryId, {
-        startedAt: new Date().toISOString(),
+        startedAt,
         completedAt: null,
         accumulatedElapsedMs: 0,
         resumedAt: null,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to start placement', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { placement: plcBefore }));
     }
   };
 
   const handleResumeExtraction = async () => {
+    const extBefore = { ...(surgery?.extraction || {}) };
+    const resumedAt = new Date().toISOString();
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      extraction: {
+        ...(prev?.extraction || {}),
+        completedAt: null,
+        resumedAt,
+      },
+    }));
     try {
       const updated = await updateExtraction(surgeryId, {
         completedAt: null,
-        resumedAt: new Date().toISOString(),
+        resumedAt,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to resume extraction', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { extraction: extBefore }));
     }
   };
 
   const handleResumePlacement = async () => {
+    const plcBefore = { ...(surgery?.placement || {}) };
+    const resumedAt = new Date().toISOString();
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      placement: {
+        ...(prev?.placement || {}),
+        completedAt: null,
+        resumedAt,
+      },
+    }));
     try {
       const updated = await updatePlacement(surgeryId, {
         completedAt: null,
-        resumedAt: new Date().toISOString(),
+        resumedAt,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to resume placement', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { placement: plcBefore }));
     }
   };
 
   const handleStopExtraction = async () => {
+    const ext = surgery?.extraction || {};
+    const extBefore = { ...ext };
+    const accumulated = ext.accumulatedElapsedMs ?? 0;
+    const segment = ext.resumedAt
+      ? Date.now() - new Date(ext.resumedAt).getTime()
+      : ext.startedAt
+        ? Date.now() - new Date(ext.startedAt).getTime()
+        : 0;
+    const completedAt = new Date().toISOString();
+    const accumulatedElapsedMs = accumulated + segment;
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      extraction: {
+        ...(prev?.extraction || {}),
+        completedAt,
+        accumulatedElapsedMs,
+        resumedAt: null,
+      },
+    }));
     try {
-      const ext = surgery?.extraction || {};
-      const accumulated = ext.accumulatedElapsedMs ?? 0;
-      const segment = ext.resumedAt
-        ? Date.now() - new Date(ext.resumedAt).getTime()
-        : ext.startedAt
-          ? Date.now() - new Date(ext.startedAt).getTime()
-          : 0;
       const updated = await updateExtraction(surgeryId, {
-        completedAt: new Date().toISOString(),
-        accumulatedElapsedMs: accumulated + segment,
+        completedAt,
+        accumulatedElapsedMs,
         resumedAt: null,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to stop extraction', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { extraction: extBefore }));
     }
   };
 
   const handleStopPlacement = async () => {
+    const plc = surgery?.placement || {};
+    const plcBefore = { ...plc };
+    const accumulated = plc.accumulatedElapsedMs ?? 0;
+    const segment = plc.resumedAt
+      ? Date.now() - new Date(plc.resumedAt).getTime()
+      : plc.startedAt
+        ? Date.now() - new Date(plc.startedAt).getTime()
+        : 0;
+    const completedAt = new Date().toISOString();
+    const accumulatedElapsedMs = accumulated + segment;
+    onUpdate((prev) => mergeSurgeryPatch(prev, {
+      placement: {
+        ...(prev?.placement || {}),
+        completedAt,
+        accumulatedElapsedMs,
+        resumedAt: null,
+      },
+    }));
     try {
-      const plc = surgery?.placement || {};
-      const accumulated = plc.accumulatedElapsedMs ?? 0;
-      const segment = plc.resumedAt
-        ? Date.now() - new Date(plc.resumedAt).getTime()
-        : plc.startedAt
-          ? Date.now() - new Date(plc.startedAt).getTime()
-          : 0;
       const updated = await updatePlacement(surgeryId, {
-        completedAt: new Date().toISOString(),
-        accumulatedElapsedMs: accumulated + segment,
+        completedAt,
+        accumulatedElapsedMs,
         resumedAt: null,
       });
-      onUpdate(updated);
+      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
     } catch (err) {
       console.error('Failed to stop placement', err);
+      onUpdate((prev) => mergeSurgeryPatch(prev, { placement: plcBefore }));
     }
   };
 
@@ -548,7 +636,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
                   label={extractionCompleted ? S.statusCompleted : extractionNotStarted ? S.statusNotStarted : S.statusInProgress}
                   size="small"
                   color={extractionCompleted ? 'primary' : 'default'}
-                  sx={{ fontWeight: 700, fontSize: 11, letterSpacing: '0.05em' }}
+                  sx={STATUS_CHIP_SX}
                 />
               </Box>
               <Button
@@ -583,7 +671,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
                   label={placementCompleted ? S.statusCompleted : placementNotStarted ? S.statusNotStarted : S.statusInProgress}
                   size="small"
                   color={placementCompleted ? 'primary' : 'default'}
-                  sx={{ fontWeight: 700, fontSize: 11, letterSpacing: '0.05em' }}
+                  sx={STATUS_CHIP_SX}
                 />
               </Box>
               <Button
@@ -611,35 +699,35 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
         {/* Extraction highlights - separate cards below Extraction & Placement */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 2, mt: 3, width: '100%' }}>
           <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
-            <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{extractionStats.totalGrafts ?? 0}</Typography>
+            <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{activityReportStats.graftCount ?? 0}</Typography>
             <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>{S.totalGrafts}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Typography variant="h4" fontWeight={700} color="text.primary">{extractionStats.totalHairs ?? 0}</Typography>
+            <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.potHair ?? 0}</Typography>
             <Typography variant="caption" color="text.secondary">{S.totalHairs}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
-            <Typography variant="h4" fontWeight={700} color="text.primary">{extractionStats.singleGrafts ?? 0}</Typography>
+            <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.singleGrafts ?? 0}</Typography>
             <Typography variant="caption" color="text.secondary">{S.singleGrafts}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">
-              {extractionStats.totalHairs ? `${(extractionStats.hairTransectionRate * 100).toFixed(2)}%` : '0%'}
+              {activityReportStats.potHair ? `${activityReportStats.transRateHair.toFixed(2)}%` : '0%'}
             </Typography>
             <Typography variant="caption" color="text.secondary">{S.transRateHair}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">
-              {extractionStats.totalGrafts ? `${(extractionStats.graftTransectionRate * 100).toFixed(2)}%` : '0%'}
+              {activityReportStats.graftCount ? `${activityReportStats.transRateGrafts.toFixed(2)}%` : '0%'}
             </Typography>
             <Typography variant="caption" color="text.secondary">{S.transRateGrafts}</Typography>
           </Paper>
         </Box>
 
-        {/* Technician performance cards - 4 column grid */}
-        {selectedTechnicians.length > 0 && (
+        {/* Technician performance cards — same column rules as completed report (assigned + anyone with activity) */}
+        {techColumns.length > 0 && (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mt: 3, width: '100%' }}>
-            {selectedTechnicians.map((tech) => {
+            {techColumns.map((tech) => {
               const tid = tech.id || tech.objectId;
               const stats = technicianStats.get(tid) || {};
               const statRows = [
@@ -683,21 +771,25 @@ function ReportValue({ value }) {
       fontWeight={400}
       data-report-value
       sx={{
-        ...(hasValue ? {} : { bgcolor: colors.todo, px: 0.5, borderRadius: 0.5 }),
+        ...(hasValue ? {} : { color: 'text.disabled' }),
       }}
     >
-      {hasValue ? value : 'todo'}
+      {hasValue ? value : '—'}
     </Typography>
   );
 }
 
-function ReportRow({ label, value }) {
+function ReportRow({ label, value, valueLoading }) {
   return (
-    <Box data-report-row sx={{ display: 'flex', gap: 2, py: 0.5 }}>
+    <Box data-report-row sx={{ display: 'flex', gap: 2, py: 0.5, alignItems: 'center' }}>
       <Typography variant="body2" fontWeight={600} color="text.primary" sx={{ minWidth: 140 }}>
         {label}:
       </Typography>
-      <ReportValue value={value} />
+      {valueLoading ? (
+        <Skeleton variant="text" width={120} sx={{ flex: 1, maxWidth: 220 }} />
+      ) : (
+        <ReportValue value={value} />
+      )}
     </Box>
   );
 }
@@ -705,11 +797,13 @@ function ReportRow({ label, value }) {
 function DoneState({ surgery, surgeryId, company, technicians, options, onReport, onExportPdfReady }) {
   const reportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
-  const activities = useSurgeryActivities(surgeryId);
+  const [activities, activitiesLoading] = useSurgeryActivities(surgeryId, 0, { poll: false });
   const patient = surgery?.patient ?? {};
+  const patientRowsLoading = Boolean(surgery?.patientId && !surgery?.patient);
   const surgical = surgery?.surgical || {};
   const entries = surgery?.extraction?.entries ?? [];
-  const stats = getReportStats(surgery);
+  const activityReportStats = getAggregateExtractionStatsFromActivities(activities);
+  const extractionCountByLabel = getExtractionCountsByLabel(activities);
   const graftButtons = surgery?.graftButtons ?? options?.graftButtons ?? [];
 
   const sxTotalMs = getSurgeryTotalMs(surgery);
@@ -717,6 +811,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
   const placementTotalMs = getPhaseElapsedMs(surgery?.placement) || null;
 
   const { byTech, graftTypes, techIds } = getGraftCountsByTechnician(activities, graftButtons);
+  const graftRowLabels = getGraftTypeLabelsForReport(graftTypes, entries, extractionCountByLabel);
   const techColumns = getReportTechnicianColumns(technicians, surgery, activities, techIds);
   const technicianStats = getTechnicianStatsFromActivities(activities);
 
@@ -775,9 +870,10 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
 
   useEffect(() => {
     if (!onExportPdfReady) return;
-    onExportPdfReady({ handleExportPdf, exporting });
+    const reportDataReady = !activitiesLoading && !patientRowsLoading;
+    onExportPdfReady({ handleExportPdf, exporting, reportDataReady });
     return () => onExportPdfReady(null);
-  }, [onExportPdfReady, handleExportPdf, exporting]);
+  }, [onExportPdfReady, handleExportPdf, exporting, activitiesLoading, patientRowsLoading]);
 
   const perfMetrics = [
     { key: 'graftCount', label: S.graftCount, fmt: (v) => v ?? 0 },
@@ -834,8 +930,14 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
         <Typography variant="h6" fontWeight={700} sx={{ letterSpacing: 0.5, mb: 0.5 }}>
           {S.reportTitle}
         </Typography>
-        <Typography variant="body2" sx={{ opacity: 0.95 }}>
-          Patient: {patient?.initials || '—'} | Date: {formatDate(surgery?.startedAt || surgery?.completedAt)}
+        <Typography variant="body2" sx={{ opacity: 0.95, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Box component="span">Patient:</Box>
+          {patientRowsLoading ? (
+            <Skeleton variant="text" width={72} sx={{ bgcolor: 'rgba(255,255,255,0.25)' }} />
+          ) : (
+            <Box component="span">{patient?.initials || '—'}</Box>
+          )}
+          <Box component="span">| Date: {formatDate(surgery?.startedAt || surgery?.completedAt)}</Box>
         </Typography>
       </Paper>
 
@@ -845,12 +947,12 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           <Typography variant="subtitle1" fontWeight={600} color="primary.main" sx={{ borderBottom: 2, borderColor: 'primary.main', pb: 0.5, mb: 2 }}>
             {S.patientInfo}
           </Typography>
-          <ReportRow label="Patient ID" value={patient?.initials} />
-          <ReportRow label="Date of Birth" value={formatDateMmDdYyyy(patient?.dob) || patient?.dob} />
-          <ReportRow label="Hair Type" value={patient?.hairType} />
-          <ReportRow label="Hair Color" value={patient?.hairColor} />
-          <ReportRow label="Hair Caliber" value={patient?.hairCaliber} />
-          <ReportRow label="Skin Color" value={patient?.skinColor} />
+          <ReportRow label="Patient ID" value={patient?.initials} valueLoading={patientRowsLoading} />
+          <ReportRow label="Date of Birth" value={formatDateMmDdYyyy(patient?.dob) || patient?.dob} valueLoading={patientRowsLoading} />
+          <ReportRow label="Hair Type" value={patient?.hairType} valueLoading={patientRowsLoading} />
+          <ReportRow label="Hair Color" value={patient?.hairColor} valueLoading={patientRowsLoading} />
+          <ReportRow label="Hair Caliber" value={patient?.hairCaliber} valueLoading={patientRowsLoading} />
+          <ReportRow label="Skin Color" value={patient?.skinColor} valueLoading={patientRowsLoading} />
         </Paper>
         <Paper sx={{ flex: 1, minWidth: 280, p: 4 }}>
           <Typography variant="subtitle1" fontWeight={600} color="primary.main" sx={{ borderBottom: 2, borderColor: 'primary.main', pb: 0.5, mb: 2 }}>
@@ -869,27 +971,47 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
       {/* Five highlight cards - match in-progress style */}
       <Box data-report-cards sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 2, mb: 3 }}>
         <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
-          <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{stats.totalGrafts ?? 0}</Typography>
+          {activitiesLoading ? (
+            <Skeleton variant="rounded" width={72} height={42} sx={{ mx: 'auto', bgcolor: 'rgba(255,255,255,0.25)' }} />
+          ) : (
+            <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{activityReportStats.graftCount ?? 0}</Typography>
+          )}
           <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>{S.totalGrafts}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
-          <Typography variant="h4" fontWeight={700} color="text.primary">{stats.totalHairs ?? 0}</Typography>
+          {activitiesLoading ? (
+            <Skeleton variant="rounded" width={72} height={42} sx={{ mx: 'auto' }} />
+          ) : (
+            <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.potHair ?? 0}</Typography>
+          )}
           <Typography variant="caption" color="text.secondary">{S.totalHairs}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
-          <Typography variant="h4" fontWeight={700} color="text.primary">{stats.singleGrafts ?? 0}</Typography>
+          {activitiesLoading ? (
+            <Skeleton variant="rounded" width={72} height={42} sx={{ mx: 'auto' }} />
+          ) : (
+            <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.singleGrafts ?? 0}</Typography>
+          )}
           <Typography variant="caption" color="text.secondary">{S.singleGrafts}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
-          <Typography variant="h4" fontWeight={700} color="text.primary">
-            {stats.totalHairs ? `${(stats.hairTransectionRate * 100).toFixed(2)}%` : '0%'}
-          </Typography>
+          {activitiesLoading ? (
+            <Skeleton variant="rounded" width={72} height={42} sx={{ mx: 'auto' }} />
+          ) : (
+            <Typography variant="h4" fontWeight={700} color="text.primary">
+              {activityReportStats.potHair ? `${activityReportStats.transRateHair.toFixed(2)}%` : '0%'}
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary">{S.transRateHair}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
-          <Typography variant="h4" fontWeight={700} color="text.primary">
-            {stats.totalGrafts ? `${(stats.graftTransectionRate * 100).toFixed(2)}%` : '0%'}
-          </Typography>
+          {activitiesLoading ? (
+            <Skeleton variant="rounded" width={72} height={42} sx={{ mx: 'auto' }} />
+          ) : (
+            <Typography variant="h4" fontWeight={700} color="text.primary">
+              {activityReportStats.graftCount ? `${activityReportStats.transRateGrafts.toFixed(2)}%` : '0%'}
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary">{S.transRateGrafts}</Typography>
         </Paper>
       </Box>
@@ -941,22 +1063,30 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
               </TableRow>
             </TableHead>
               <TableBody>
-                {(graftTypes.length ? graftTypes : entries.map((e) => e.label)).map((label) => {
-                  const rowTotals = techColumns.map((t) => {
-                    const tid = t.id || t.objectId;
-                    return byTech.get(tid)?.get(label) ?? 0;
-                  });
-                  const total = rowTotals.reduce((s, n) => s + n, 0) || (entries.find((e) => e.label === label)?.count ?? 0);
-                  return (
-                    <TableRow key={label}>
-                      <TableCell>{label}</TableCell>
+                {activitiesLoading ? (
+                  [1, 2, 3, 4, 5].map((i) => (
+                    <TableRow key={`g-sk-${i}`}>
+                      <TableCell><Skeleton variant="text" width={80} /></TableCell>
                       {techColumns.map((t) => (
-                        <TableCell key={t.id || t.objectId} align="center">{byTech.get(t.id || t.objectId)?.get(label) ?? ''}</TableCell>
+                        <TableCell key={t.id || t.objectId} align="center"><Skeleton variant="text" width={36} sx={{ mx: 'auto' }} /></TableCell>
                       ))}
-                      <TableCell align="right"><Typography component="span" fontWeight={600}>{total}</Typography></TableCell>
+                      <TableCell align="right"><Skeleton variant="text" width={40} sx={{ ml: 'auto' }} /></TableCell>
                     </TableRow>
-                  );
-                })}
+                  ))
+                ) : (
+                  graftRowLabels.map((label) => {
+                    const total = extractionCountByLabel.get(label) ?? 0;
+                    return (
+                      <TableRow key={label}>
+                        <TableCell>{label}</TableCell>
+                        {techColumns.map((t) => (
+                          <TableCell key={t.id || t.objectId} align="center">{byTech.get(t.id || t.objectId)?.get(label) ?? ''}</TableCell>
+                        ))}
+                        <TableCell align="right"><Typography component="span" fontWeight={600}>{total}</Typography></TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </TableContainer>
@@ -981,29 +1111,39 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
                 </TableRow>
               </TableHead>
               <TableBody>
-                {perfMetrics.map(({ key, label, fmt }) => {
-                  const techVals = techColumns.map((tech) => {
-                    const tid = tech.id || tech.objectId;
-                    return technicianStats.get(tid)?.[key];
-                  });
-                  const totalVal = key === 'graftCount' ? (stats.totalGrafts ?? 0)
-                    : key === 'hairCount' ? (stats.totalIntact ?? 0)
-                    : key === 'potHair' ? (stats.totalHairs ?? 0)
-                    : key === 'transRateHair' ? (stats.totalHairs ? stats.hairTransectionRate * 100 : 0)
-                    : key === 'transRateGrafts' ? (stats.totalGrafts ? stats.graftTransectionRate * 100 : 0)
-                    : 0;
-                  return (
-                    <TableRow key={key}>
+                {activitiesLoading ? (
+                  perfMetrics.map(({ key, label }) => (
+                    <TableRow key={`p-sk-${key}`}>
                       <TableCell><Typography variant="body2" color="text.primary">{label}</Typography></TableCell>
                       {techColumns.map((tech) => (
                         <TableCell key={tech.id || tech.objectId} align="center">
-                          <Typography variant="body2" color="text.primary">{fmt(technicianStats.get(tech.id || tech.objectId)?.[key])}</Typography>
+                          <Skeleton variant="text" width={48} sx={{ mx: 'auto' }} />
                         </TableCell>
                       ))}
-                      <TableCell align="right"><Typography variant="body2" fontWeight={600} color="text.primary">{fmt(totalVal)}</Typography></TableCell>
+                      <TableCell align="right"><Skeleton variant="text" width={52} sx={{ ml: 'auto' }} /></TableCell>
                     </TableRow>
-                  );
-                })}
+                  ))
+                ) : (
+                  perfMetrics.map(({ key, label, fmt }) => {
+                    const totalVal = key === 'graftCount' ? (activityReportStats.graftCount ?? 0)
+                      : key === 'hairCount' ? (activityReportStats.hairCount ?? 0)
+                      : key === 'potHair' ? (activityReportStats.potHair ?? 0)
+                      : key === 'transRateHair' ? (activityReportStats.transRateHair ?? 0)
+                      : key === 'transRateGrafts' ? (activityReportStats.transRateGrafts ?? 0)
+                      : 0;
+                    return (
+                      <TableRow key={key}>
+                        <TableCell><Typography variant="body2" color="text.primary">{label}</Typography></TableCell>
+                        {techColumns.map((tech) => (
+                          <TableCell key={tech.id || tech.objectId} align="center">
+                            <Typography variant="body2" color="text.primary">{fmt(technicianStats.get(tech.id || tech.objectId)?.[key])}</Typography>
+                          </TableCell>
+                        ))}
+                        <TableCell align="right"><Typography variant="body2" fontWeight={600} color="text.primary">{fmt(totalVal)}</Typography></TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </TableContainer>
@@ -1040,10 +1180,29 @@ export default function SurgeryDetail() {
   const [doctors, setDoctors] = useState([]);
   const [options, setOptions] = useState({});
   const [company, setCompany] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const [exportPdfApi, setExportPdfApi] = useState(null);
+
+  /** List / dashboard rows pass full surgery via location.state for instant correct layout. */
+  const surgeryPreview = useMemo(() => {
+    const p = location.state?.surgeryPreview;
+    if (!p || !id) return null;
+    const pid = String(p.id ?? p.objectId ?? '');
+    if (pid !== String(id)) return null;
+    return p;
+  }, [location.state, id]);
+
+  const displaySurgery = surgery ?? surgeryPreview ?? null;
+
+  const handleSurgeryUpdate = useCallback((arg) => {
+    setSurgery((prev) => {
+      const base = prev ?? surgeryPreview ?? null;
+      if (typeof arg === 'function') return arg(base);
+      return arg;
+    });
+  }, [surgeryPreview]);
 
   /** Polling only — merges light fields into existing state. */
   const fetchSurgeryLight = useCallback(async () => {
@@ -1068,30 +1227,43 @@ export default function SurgeryDetail() {
   useEffect(() => {
     let cancelled = false;
     if (!id) {
-      setLoading(false);
       return undefined;
     }
-    setLoading(true);
+    setLoadError(false);
     setSurgery(null);
-    (async () => {
-      try {
-        const lite = await getSurgery(id, { light: '1' });
-        if (cancelled) return;
-        setSurgery(lite);
-        setLoading(false);
+    let received = false;
 
-        const hydrated = await getSurgery(id, { omitGrafts: '1' });
-        if (cancelled) return;
-        setSurgery((prev) =>
-          prev && hydrated
-            ? { ...prev, ...hydrated, patient: hydrated.patient ?? prev.patient }
-            : hydrated,
-        );
-      } catch (err) {
-        console.error('Failed to fetch surgery', err);
-        if (!cancelled) setLoading(false);
-      }
-    })();
+    const mergeIn = (piece) => {
+      if (cancelled || !piece) return;
+      received = true;
+      setLoadError(false);
+      setSurgery((prev) => {
+        if (!prev) return piece;
+        return {
+          ...prev,
+          ...piece,
+          patient: piece.patient ?? prev.patient,
+          graftButtons: prev.graftButtons ?? piece.graftButtons,
+        };
+      });
+    };
+
+    const pLight = getSurgery(id, { light: '1' })
+      .then((data) => mergeIn(data))
+      .catch((err) => {
+        console.error('Failed to fetch surgery (light)', err);
+      });
+    const pHydrated = getSurgery(id, { omitGrafts: '1' })
+      .then((data) => mergeIn(data))
+      .catch((err) => {
+        console.error('Failed to load surgery details (patient)', err);
+      });
+
+    Promise.allSettled([pLight, pHydrated]).then(() => {
+      if (cancelled) return;
+      if (!received) setLoadError(true);
+    });
+
     return () => {
       cancelled = true;
     };
@@ -1138,20 +1310,20 @@ export default function SurgeryDetail() {
   };
 
   const handleTechniciansChange = async (technicianIds) => {
-    const prevIds = surgery?.technicianIds ?? [];
-    setSurgery((s) => ({ ...s, technicianIds })); // Optimistic update
+    const prevIds = displaySurgery?.technicianIds ?? [];
+    setSurgery((s) => ({ ...(s ?? surgeryPreview ?? {}), technicianIds })); // Optimistic update
     try {
       const updated = await updateSurgery(id, { technicianIds });
       setSurgery(updated);
     } catch (err) {
       console.error('Failed to update technicians', err);
-      setSurgery((s) => ({ ...s, technicianIds: prevIds })); // Revert on failure
+      setSurgery((s) => ({ ...(s ?? surgeryPreview ?? {}), technicianIds: prevIds })); // Revert on failure
     }
   };
 
   const handleDoctorChange = async (doctorId, doctorName) => {
     try {
-      const prev = surgery?.surgical || {};
+      const prev = displaySurgery?.surgical || {};
       const surgical = { ...prev };
       if (doctorId) {
         surgical.doctorId = doctorId;
@@ -1174,17 +1346,17 @@ export default function SurgeryDetail() {
   const handleFieldSave = async (section, key, value) => {
     try {
       if (section === 'patient') {
-        const patientId = typeof surgery?.patientId === 'string'
-          ? surgery.patientId
-          : (surgery?.patient?.id ?? surgery?.patientId?.objectId);
+        const patientId = typeof displaySurgery?.patientId === 'string'
+          ? displaySurgery.patientId
+          : (displaySurgery?.patient?.id ?? displaySurgery?.patientId?.objectId);
         if (!patientId) return;
         const updated = await updatePatient(patientId, { [key]: value });
         setSurgery((s) => ({
-          ...s,
-          patient: { ...(s.patient || {}), ...updated },
+          ...(s ?? surgeryPreview ?? {}),
+          patient: { ...((s ?? surgeryPreview)?.patient || {}), ...updated },
         }));
       } else if (section === 'surgical') {
-        const surgical = { ...(surgery?.surgical || {}), [key]: value };
+        const surgical = { ...(displaySurgery?.surgical || {}), [key]: value };
         const updated = await updateSurgery(id, { surgical });
         setSurgery(updated);
       } else if (section === 'surgery' && key === 'graftGoal') {
@@ -1211,12 +1383,12 @@ export default function SurgeryDetail() {
     }
   };
 
-  const status = surgery?.status;
-  const notStarted = !status || status === 'pending' || !surgery?.startedAt;
+  const status = displaySurgery?.status;
+  const notStarted = !status || status === 'pending' || !displaySurgery?.startedAt;
   const inProgress = status === 'active';
   const done = status === 'completed';
-  const extractionCompleted = !!surgery?.extraction?.completedAt;
-  const placementCompleted = !!surgery?.placement?.completedAt;
+  const extractionCompleted = !!displaySurgery?.extraction?.completedAt;
+  const placementCompleted = !!displaySurgery?.placement?.completedAt;
   const canFinishSurgery = extractionCompleted && placementCompleted;
 
   return (
@@ -1248,7 +1420,7 @@ export default function SurgeryDetail() {
               size="small"
               startIcon={<PictureAsPdfIcon />}
               onClick={exportPdfApi.handleExportPdf}
-              disabled={exportPdfApi.exporting}
+              disabled={exportPdfApi.exporting || !exportPdfApi.reportDataReady}
               sx={{ textTransform: 'none' }}
             >
               {exportPdfApi.exporting ? 'Exporting…' : S.exportPdf}
@@ -1256,7 +1428,7 @@ export default function SurgeryDetail() {
           )}
         </Box>
         <Box sx={{ flex: 1 }} />
-        {notStarted && !loading && (
+        {notStarted && displaySurgery && (
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
             {startError && (
               <Typography variant="body2" color="error">{startError}</Typography>
@@ -1274,14 +1446,16 @@ export default function SurgeryDetail() {
       </Box>
 
       {/* Content */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: done ? 'flex-start' : 'center' }}>
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-            <CircularProgress size={40} />
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+        {loadError ? (
+          <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
+            <Typography color="error">{S.requestFailed}</Typography>
           </Box>
+        ) : !displaySurgery ? (
+          <Box sx={{ flex: 1, minHeight: 240 }} />
         ) : notStarted ? (
           <NotStartedState
-            surgery={surgery}
+            surgery={displaySurgery}
             technicians={technicians}
             doctors={doctors}
             onTechniciansChange={handleTechniciansChange}
@@ -1291,10 +1465,10 @@ export default function SurgeryDetail() {
           />
         ) : inProgress ? (
           <InProgressState
-            surgery={surgery}
+            surgery={displaySurgery}
             surgeryId={id}
             options={options}
-            onUpdate={setSurgery}
+            onUpdate={handleSurgeryUpdate}
             technicians={technicians}
             doctors={doctors}
             onTechniciansChange={handleTechniciansChange}
@@ -1302,10 +1476,10 @@ export default function SurgeryDetail() {
             hidePatientEdit={!!adminCompany}
           />
         ) : done ? (
-          <DoneState surgery={surgery} surgeryId={id} company={company} technicians={technicians} options={options} onReport={handleReport} onExportPdfReady={setExportPdfApi} />
+          <DoneState surgery={displaySurgery} surgeryId={id} company={company} technicians={technicians} options={options} onReport={handleReport} onExportPdfReady={setExportPdfApi} />
         ) : (
           <NotStartedState
-            surgery={surgery}
+            surgery={displaySurgery}
             technicians={technicians}
             doctors={doctors}
             onTechniciansChange={handleTechniciansChange}

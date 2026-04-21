@@ -14,7 +14,7 @@ import { getSurgeriesByPatient } from '../../api/surgeries';
 import PageHeader from '../../components/PageHeader';
 import GraftProgressBar from '../../components/GraftProgressBar';
 import StatusBadge from '../../components/StatusBadge';
-import { getTotalGrafts, getGoalPct, formatDate, formatDateMmDdYyyy } from '../../utils/surgery';
+import { getGraftProgressCurrent, getGoalPct, formatDate, formatDateMmDdYyyy } from '../../utils/surgery';
 
 // ─── Detail card ─────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ function SurgeryHistoryTable({ surgeries }) {
                   <StatusBadge status={s.status} />
                 </TableCell>
                 <TableCell sx={{ minWidth: 220 }}>
-                  <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
+                  <GraftProgressBar current={getGraftProgressCurrent(s)} goal={s.graftGoal ?? 0} />
                 </TableCell>
                 <TableCell>
                   <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
@@ -107,6 +107,7 @@ function SurgeryHistoryTable({ surgeries }) {
                   <MuiLink
                     component={Link}
                     to={`/dashboard/surgeries/${s.id || s.objectId}`}
+                    state={{ surgeryPreview: s }}
                     variant="body2"
                     fontWeight={600}
                   >

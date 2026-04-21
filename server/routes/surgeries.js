@@ -31,6 +31,49 @@ async function getSurgeryForAccess(id, req) {
   return surgery;
 }
 
+/** True extraction graft count from ActivityLog (matches bench clicks; may differ from extraction.entries if data drifted). */
+async function getExtractionGraftCountForSurgeryId(surgeryId) {
+  const q = new Parse.Query(ActivityLog);
+  q.equalTo('surgeryId', surgeryId);
+  q.equalTo('action', 'extraction');
+  return q.count({ useMasterKey: true });
+}
+
+async function getExtractionGraftCountsBySurgeryIds(surgeryIds, surgeryObjects) {
+  if (!surgeryIds.length) return {};
+  // Parse pipeline stages use lowercase keys; grouped id is often objectId in results.
+  const pipeline = [
+    { match: { action: 'extraction', surgeryId: { $in: surgeryIds } } },
+    { group: { objectId: '$surgeryId', count: { $sum: 1 } } },
+  ];
+  try {
+    const aq = new Parse.Query(ActivityLog);
+    const rows = await aq.aggregate(pipeline, { useMasterKey: true });
+    const map = {};
+    for (const row of rows) {
+      const sid = row.objectId ?? row._id;
+      if (sid != null) map[sid] = row.count;
+    }
+    return map;
+  } catch (err) {
+    console.error('ActivityLog aggregate failed', err);
+    if (!surgeryObjects?.length) return {};
+    const map = {};
+    for (const s of surgeryObjects) {
+      const ext = s.get('extraction') || {};
+      const entries = ext.entries || [];
+      map[s.id] = entries.reduce((a, e) => a + (e.count || 0), 0);
+    }
+    return map;
+  }
+}
+
+async function surgeryJsonWithExtractionGraftCount(surgery) {
+  const json = toJSON(surgery);
+  json.extractionGraftCount = await getExtractionGraftCountForSurgeryId(surgery.id);
+  return json;
+}
+
 /** Bench tech: append user to technicianIds once they participate (activity or button prefs). */
 function mergeTechnicianIfMissing(surgery, userId) {
   const raw = surgery.get('technicianIds') || [];
@@ -155,8 +198,16 @@ router.get('/', async (req, res) => {
       accountMap = Object.fromEntries(accounts.map((a) => [a.id, { id: a.id, practiceName: a.get('practiceName') }]));
     }
 
+    const graftCounts = await getExtractionGraftCountsBySurgeryIds(
+      results.map((s) => s.id),
+      results,
+    );
     const surgeries = results.map((s) => {
-      const base = { ...toJSON(s), patient: patientMap[toId(s.get('patientId'))] || null };
+      const base = {
+        ...toJSON(s),
+        patient: patientMap[toId(s.get('patientId'))] || null,
+        extractionGraftCount: graftCounts[s.id] ?? 0,
+      };
       if (req.user.roles?.includes('admin') && accountMap[toId(s.get('accountId'))]) {
         base.account = accountMap[s.get('accountId')];
       }
@@ -196,7 +247,8 @@ router.get('/:id/activities', async (req, res) => {
     query.equalTo('surgeryId', surgery.id);
     if (filterToOwn) query.equalTo('userId', req.user.id);
     query.descending('createdAt');
-    query.limit(200);
+    // Per-tech report aggregates every click; a 200 cap truncated long cases and made summaries incomplete.
+    query.limit(50000);
     const results = await query.find({ useMasterKey: true });
     const userIds = [...new Set(results.map((r) => r.get('userId')).filter(Boolean))];
     let userMap = {};
@@ -228,8 +280,8 @@ router.post('/:id/activities', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const { action, payload } = req.body;
-    if (!action || !['extraction', 'placement'].includes(action)) {
-      return res.status(400).json({ error: 'action must be extraction or placement' });
+    if (action !== 'extraction') {
+      return res.status(400).json({ error: 'action must be extraction' });
     }
     const activity = new ActivityLog();
     activity.set('surgeryId', surgery.id);
@@ -239,20 +291,18 @@ router.post('/:id/activities', async (req, res) => {
     activity.set('payload', payload || {});
     await activity.save(null, { useMasterKey: true });
     const ext = surgery.get('extraction') || {};
-    const plc = surgery.get('placement') || {};
-    if (action === 'extraction' && payload?.label != null) {
+    if (payload?.label != null) {
       const newExt = applyExtractionDelta(ext, payload, 1);
       if (!ext.startedAt) newExt.startedAt = new Date().toISOString();
       surgery.set('extraction', newExt);
-    } else if (action === 'placement') {
-      const newPlc = applyPlacementDelta(plc, 1);
-      if (!plc.startedAt) newPlc.startedAt = new Date().toISOString();
-      surgery.set('placement', newPlc);
     }
     if (isBenchTechnician(req)) mergeTechnicianIfMissing(surgery, req.user.id);
     await surgery.save(null, { useMasterKey: true });
     // Omit withPatient/withGraftButtons — client already has them; saves two DB round-trips per click.
-    res.status(201).json({ activity: toJSON(activity), surgery: toJSON(surgery) });
+    res.status(201).json({
+      activity: toJSON(activity),
+      surgery: await surgeryJsonWithExtractionGraftCount(surgery),
+    });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -272,23 +322,22 @@ router.patch('/:id/activities/:activityId', async (req, res) => {
     const { payload: newPayload } = req.body;
     const oldPayload = activity.get('payload') || {};
     const action = activity.get('action');
-    const ext = surgery.get('extraction') || {};
-    const plc = surgery.get('placement') || {};
-    if (action === 'extraction') {
-      surgery.set('extraction', applyExtractionDelta(ext, oldPayload, -1));
-      if (newPayload?.label) {
-        const afterUndo = surgery.get('extraction') || {};
-        surgery.set('extraction', applyExtractionDelta(afterUndo, newPayload, 1));
-      }
-      activity.set('payload', newPayload || oldPayload);
-    } else if (action === 'placement') {
-      surgery.set('placement', applyPlacementDelta(plc, -1));
-      activity.set('payload', newPayload || oldPayload);
-      surgery.set('placement', applyPlacementDelta(surgery.get('placement'), 1));
+    if (action !== 'extraction') {
+      return res.status(400).json({ error: 'Only extraction activities can be edited' });
     }
+    const ext = surgery.get('extraction') || {};
+    surgery.set('extraction', applyExtractionDelta(ext, oldPayload, -1));
+    if (newPayload?.label) {
+      const afterUndo = surgery.get('extraction') || {};
+      surgery.set('extraction', applyExtractionDelta(afterUndo, newPayload, 1));
+    }
+    activity.set('payload', newPayload || oldPayload);
     await activity.save(null, { useMasterKey: true });
     await surgery.save(null, { useMasterKey: true });
-    res.json({ activity: toJSON(activity), surgery: toJSON(surgery) });
+    res.json({
+      activity: toJSON(activity),
+      surgery: await surgeryJsonWithExtractionGraftCount(surgery),
+    });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -313,7 +362,7 @@ router.delete('/:id/activities/:activityId', async (req, res) => {
     else if (action === 'placement') surgery.set('placement', applyPlacementDelta(plc, -1));
     await surgery.save(null, { useMasterKey: true });
     await activity.destroy({ useMasterKey: true });
-    res.json({ surgery: toJSON(surgery) });
+    res.json({ surgery: await surgeryJsonWithExtractionGraftCount(surgery) });
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
@@ -331,7 +380,7 @@ router.get('/:id', async (req, res) => {
     if (!isAdmin && toId(surgery.get('accountId')) !== toId(req.user.accountId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const json = toJSON(surgery);
+    const json = await surgeryJsonWithExtractionGraftCount(surgery);
     const light = req.query.light === '1' || req.query.light === 'true';
     const omitGrafts = req.query.omitGrafts === '1' || req.query.omitGrafts === 'true';
     if (light) {
@@ -420,30 +469,30 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST /api/surgeries/:id/extraction
+// POST /api/surgeries/:id/extraction — timer updates only; light JSON (no patient/graft hydration).
 router.post('/:id/extraction', async (req, res) => {
   try {
-    const query = new Parse.Query(Surgery);
-    const surgery = await query.get(req.params.id, { useMasterKey: true });
+    const surgery = await getSurgeryForAccess(req.params.id, req);
+    if (!surgery) return res.status(404).json({ error: 'Not found' });
     const existing = surgery.get('extraction') || {};
     surgery.set('extraction', { ...existing, ...req.body });
     await surgery.save(null, { useMasterKey: true });
-    res.json(await withGraftButtons(await withPatient(toJSON(surgery))));
+    res.json(toJSON(surgery));
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/surgeries/:id/placement
+// POST /api/surgeries/:id/placement — same as extraction timer route.
 router.post('/:id/placement', async (req, res) => {
   try {
-    const query = new Parse.Query(Surgery);
-    const surgery = await query.get(req.params.id, { useMasterKey: true });
+    const surgery = await getSurgeryForAccess(req.params.id, req);
+    if (!surgery) return res.status(404).json({ error: 'Not found' });
     const existing = surgery.get('placement') || {};
     surgery.set('placement', { ...existing, ...req.body });
     await surgery.save(null, { useMasterKey: true });
-    res.json(await withGraftButtons(await withPatient(toJSON(surgery))));
+    res.json(toJSON(surgery));
   } catch (err) {
     if (err.code === 101) return res.status(404).json({ error: 'Not found' });
     res.status(500).json({ error: err.message });

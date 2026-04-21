@@ -3,6 +3,7 @@ import { Box, Typography } from '@mui/material';
 /**
  * Displays graft extraction progress as a filled bar between a min and goal value.
  * Used on: Home (active + completed lists), Surgeries list, Surgery Detail.
+ * `current` should come from getGraftProgressCurrent() so it matches ActivityLog when provided by the API.
  *
  * Props:
  *   current  {number} — current graft count

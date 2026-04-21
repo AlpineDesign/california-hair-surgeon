@@ -1,20 +1,31 @@
-import { TableRow, TableCell, Box, CircularProgress } from '@mui/material';
+import { TableRow, TableCell, Skeleton } from '@mui/material';
 
 /**
- * Renders a full-width spinner row inside a TableBody while data is loading.
- * Drop-in replacement for the empty-state row.
+ * Renders skeleton placeholder rows inside a TableBody while data is loading.
  *
  * Props:
- *   colSpan  {number} — must match the number of columns in the table
+ *   colSpan {number} — number of columns (one TableCell + Skeleton per column per row)
+ *   rows  {number} — how many skeleton rows (default 6)
  */
-export default function TableLoader({ colSpan }) {
+export default function TableLoader({ colSpan, rows = 6 }) {
   return (
-    <TableRow>
-      <TableCell colSpan={colSpan} sx={{ border: 0 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress size={32} />
-        </Box>
-      </TableCell>
-    </TableRow>
+    <>
+      {Array.from({ length: rows }, (_, rowIdx) => (
+        <TableRow key={rowIdx}>
+          {Array.from({ length: colSpan }, (_, colIdx) => (
+            <TableCell key={colIdx} sx={{ border: 0 }}>
+              <Skeleton
+                variant="rounded"
+                height={20}
+                sx={{
+                  maxWidth: colIdx === 0 ? 200 : colIdx === colSpan - 1 ? 140 : 96,
+                  width: '100%',
+                }}
+              />
+            </TableCell>
+          ))}
+        </TableRow>
+      ))}
+    </>
   );
 }

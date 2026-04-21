@@ -12,7 +12,7 @@ import StatusBadge from '../../components/StatusBadge';
 import EmptyState from '../../components/EmptyState';
 import TableLoader from '../../components/TableLoader';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
-import { getTotalGrafts, getGoalPct, formatDateTime } from '../../utils/surgery';
+import { getGraftProgressCurrent, getGoalPct, formatDateTime } from '../../utils/surgery';
 import S from '../../strings';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
@@ -31,7 +31,18 @@ function ActiveSurgeriesTable({ surgeries, loading, onRowClick }) {
     return (
       <TableContainer>
         <Table size="small">
-          <TableBody><TableLoader colSpan={ACTIVE_COLS.length} /></TableBody>
+          <TableHead>
+            <TableRow>
+              {ACTIVE_COLS.map((h) => (
+                <TableCell key={h}>
+                  <Typography variant="caption" color="text.secondary">{h}</Typography>
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <TableLoader colSpan={ACTIVE_COLS.length} />
+          </TableBody>
         </Table>
       </TableContainer>
     );
@@ -74,7 +85,7 @@ function ActiveSurgeriesTable({ surgeries, loading, onRowClick }) {
                 <Typography variant="body2">{formatDateTime(s.placement?.startedAt)}</Typography>
               </TableCell>
               <TableCell sx={{ minWidth: 260 }}>
-                <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
+                <GraftProgressBar current={getGraftProgressCurrent(s)} goal={s.graftGoal ?? 0} />
               </TableCell>
             </TableRow>
             );
@@ -120,7 +131,7 @@ function SurgeriesTable({ surgeries, emptyMessage, onRowClick }) {
                 <Typography variant="body2">{formatDateTime(s.startedAt || s.createdAt)}</Typography>
               </TableCell>
               <TableCell sx={{ minWidth: 260 }}>
-                <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
+                <GraftProgressBar current={getGraftProgressCurrent(s)} goal={s.graftGoal ?? 0} />
               </TableCell>
               <TableCell>
                 <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>

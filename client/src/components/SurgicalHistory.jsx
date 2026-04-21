@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Box, Typography, Table, TableHead, TableBody, TableRow, TableCell, CircularProgress, Divider } from '@mui/material';
+import { Box, Typography, Table, TableHead, TableBody, TableRow, TableCell, Divider } from '@mui/material';
 import { getSurgeriesByPatient } from '../api/surgeries';
+import TableLoader from './TableLoader';
 import StatusBadge from './StatusBadge';
-import { getTotalGrafts, getGoalPct, formatDate } from '../utils/surgery';
+import { getGraftProgressCurrent, getGoalPct, formatDate } from '../utils/surgery';
 import S from '../strings';
 
 export default function SurgicalHistory({ patientId }) {
@@ -24,9 +25,20 @@ export default function SurgicalHistory({ patientId }) {
       <Typography variant="subtitle1" sx={{ mb: 1.5 }}>{S.surgeryHistoryLabel}</Typography>
 
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={22} />
-        </Box>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              {[S.date, S.status, S.grafts, S.goal].map((h) => (
+                <TableCell key={h}>
+                  <Typography variant="caption" color="text.secondary">{h}</Typography>
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            <TableLoader colSpan={4} rows={5} />
+          </TableBody>
+        </Table>
       ) : !surgeries || surgeries.length === 0 ? (
         <Typography variant="body2" color="text.secondary">{S.noSurgeriesOnRecord}</Typography>
       ) : (
@@ -42,7 +54,7 @@ export default function SurgicalHistory({ patientId }) {
           </TableHead>
           <TableBody>
             {surgeries.map((s) => {
-              const extracted = getTotalGrafts(s);
+              const extracted = getGraftProgressCurrent(s);
               const goal = s.graftGoal ?? 0;
               return (
                 <TableRow key={s.id || s.objectId}>

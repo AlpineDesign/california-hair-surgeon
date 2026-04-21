@@ -17,14 +17,11 @@ function formatTime(dateStr) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
 }
 
-function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionCompleted, placementCompleted }) {
+function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionCompleted }) {
   const [anchorEl, setAnchorEl] = useState(null);
-  const isExtraction = activity.action === 'extraction';
-  const label = isExtraction
-    ? (activity.payload?.label ?? '—')
-    : '+1';
-  const canEdit = isExtraction && !extractionCompleted && graftButtons?.length > 0;
-  const canDelete = (isExtraction && !extractionCompleted) || (!isExtraction && !placementCompleted);
+  const label = activity.payload?.label ?? '—';
+  const canEdit = !extractionCompleted && graftButtons?.length > 0;
+  const canDelete = !extractionCompleted;
 
   return (
     <ListItem
@@ -41,7 +38,7 @@ function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionComp
       <ListItemText
         primary={
           <Typography variant="body2">
-            {isExtraction ? `${S.extraction}: ${label}` : S.placementActivity}
+            {`${S.extraction}: ${label}`}
           </Typography>
         }
         secondary={
@@ -75,7 +72,7 @@ function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionComp
   );
 }
 
-export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractionCompleted, placementCompleted, graftButtons, refreshTrigger }) {
+export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractionCompleted, graftButtons, refreshTrigger }) {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editDialog, setEditDialog] = useState(null);
@@ -85,7 +82,8 @@ export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractio
     setLoading(true);
     try {
       const data = await getActivities(surgeryId);
-      setActivities(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setActivities(list.filter((a) => a.action === 'extraction'));
     } catch (err) {
       console.error('Failed to fetch activities', err);
     } finally {
@@ -160,7 +158,6 @@ export default function ActivityLogPanel({ surgeryId, onSurgeryUpdate, extractio
               onEdit={handleEdit}
               onDelete={handleDelete}
               extractionCompleted={extractionCompleted}
-              placementCompleted={placementCompleted}
             />
           ))
         )}

@@ -17,6 +17,8 @@ import {
   getTechnicianDisplayName,
   formatStartedAt,
   mergeSurgeryPatch,
+  groupGraftButtonsByDenominatorRows,
+  sortGraftButtonsByGraftType,
 } from '../../utils/surgery';
 import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
@@ -35,12 +37,15 @@ function formatTime(dateStr) {
 
 function getActiveButtons(graftButtons, technicianConfig) {
   if (!graftButtons?.length) return [];
+  let list;
   if (technicianConfig?.labels?.length) {
     const set = new Set(technicianConfig.labels);
-    return graftButtons.filter((b) => set.has(b.label));
+    list = graftButtons.filter((b) => set.has(b.label));
+  } else {
+    const defaults = graftButtons.filter((b) => b.isDefault);
+    list = defaults.length ? defaults : [...graftButtons];
   }
-  const defaults = graftButtons.filter((b) => b.isDefault);
-  return defaults.length ? defaults : graftButtons;
+  return list;
 }
 
 function toUserId(ref) {
@@ -49,15 +54,10 @@ function toUserId(ref) {
   return ref?.objectId ?? ref?.id ?? null;
 }
 
-function arrangeButtonsTriangular(buttons) {
-  const rows = [];
-  let idx = 0;
-  for (let r = 1; idx < buttons.length; r++) {
-    rows.push(buttons.slice(idx, idx + r));
-    idx += r;
-  }
-  if (idx < buttons.length) rows.push(buttons.slice(idx));
-  return rows;
+function graftButtonKey(btn, rowIndex = 0, colIndex = 0) {
+  const id = btn?.id || btn?.objectId;
+  if (id) return String(id);
+  return `${rowIndex}-${colIndex}-${btn?.label ?? ''}`;
 }
 
 /** Dimmed opacity while pending server; must match keyframe end state for slide-in. */
@@ -171,9 +171,11 @@ export default function CountingInterface() {
     (c) => toUserId(c.userId) === myUserId
   );
   const activeButtons = getActiveButtons(graftButtons, techConfig);
-  const buttonRows = arrangeButtonsTriangular(activeButtons);
+  const buttonRows = groupGraftButtonsByDenominatorRows(activeButtons);
+  const graftButtonsSorted = sortGraftButtonsByGraftType(graftButtons);
   const technicianStats = getTechnicianStatsFromActivities(activities);
   const myStats = technicianStats.get(user?.id || user?.objectId) || {};
+  const extractionCompleted = !!surgery?.extraction?.completedAt;
 
   const handleBack = () => navigate('/remote/surgeries');
 
@@ -400,9 +402,8 @@ export default function CountingInterface() {
     })();
   };
 
-  const extractionCompleted = !!surgery?.extraction?.completedAt;
-  const placementCompleted = !!surgery?.placement?.completedAt;
   const myActivities = activities.filter((a) => {
+    if (a.action !== 'extraction') return false;
     const aid = a.userId?.id ?? a.userId?.objectId ?? (typeof a.userId === 'string' ? a.userId : null) ?? a.user?.id;
     return aid === myUserId;
   });
@@ -445,7 +446,7 @@ export default function CountingInterface() {
             {patientLabel}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Button
             variant="outlined"
             size="small"
@@ -469,21 +470,31 @@ export default function CountingInterface() {
         </Box>
       </Box>
 
-      {/* Main content: buttons left, summary + activity right */}
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
-        {/* Left: Giant buttons grid — scrolls vertically */}
+      {/* Main content: buttons + summary/activity; column on small screens so 4 graft buttons can use full width */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: { xs: 'column', md: 'row' },
+          overflow: 'hidden',
+        }}
+      >
+        {/* Left: graft buttons — 4 columns per row; container for min-height = 4 square rows */}
         <Box
           sx={{
             flex: 1,
             minWidth: 0,
             minHeight: 0,
-            p: 4,
+            p: { xs: 1.5, sm: 2, md: 4 },
             overflowY: 'auto',
             overflowX: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
+            alignItems: 'stretch',
+            justifyContent: 'flex-start',
+            containerType: 'inline-size',
+            containerName: 'tech-graft-panel',
           }}
         >
           {surgeryPendingStart && (
@@ -495,12 +506,33 @@ export default function CountingInterface() {
           {activeButtons.length === 0 ? (
             <Typography color="text.secondary">{S.techEditButtonsConfigureHint}</Typography>
           ) : (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: { xs: 1.5, sm: 2 },
+                width: '100%',
+                maxWidth: '100%',
+                flex: 1,
+                justifyContent: 'flex-start',
+                // 4 rows of square cells (aspect 1) in 4 cols ≈ panel width + row gaps; ensures room for 4 denominator rows
+                minHeight: 'max(calc(100cqw + 48px), 320px)',
+              }}
+            >
               {buttonRows.map((row, ri) => (
-                <Box key={ri} sx={{ display: 'flex', gap: 2, justifyContent: 'flex-start' }}>
-                  {row.map((btn) => (
+                <Box
+                  key={ri}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                    gap: { xs: 1, sm: 1.5, md: 2 },
+                    width: '100%',
+                    maxWidth: '100%',
+                  }}
+                >
+                  {row.map((btn, bi) => (
                     <Button
-                      key={btn.label}
+                      key={graftButtonKey(btn, ri, bi)}
                       variant="contained"
                       color="primary"
                       disabled={surgeryPendingStart || extractionCompleted}
@@ -509,9 +541,14 @@ export default function CountingInterface() {
                       onPointerLeave={handleGraftPointerLeave}
                       onPointerCancel={handleGraftPointerLeave}
                       sx={{
-                        minWidth: 175,
-                        height: 175,
-                        fontSize: '3.2rem',
+                        minWidth: 0,
+                        width: '100%',
+                        maxWidth: '100%',
+                        aspectRatio: '1',
+                        height: 'auto',
+                        minHeight: 0,
+                        p: { xs: 0.5, sm: 1 },
+                        fontSize: 'clamp(1.1rem, 4.2vmin, 3.2rem)',
                         fontWeight: 700,
                         borderRadius: 2,
                         transition: 'opacity 0.07s ease, transform 0.07s ease',
@@ -538,10 +575,10 @@ export default function CountingInterface() {
           )}
         </Box>
 
-        {/* Right: Summary + Activity — scrolls vertically */}
+        {/* Right: Summary + Activity — scrolls vertically; full width when stacked below buttons */}
         <Box
           sx={{
-            width: 320,
+            width: { xs: '100%', md: 320 },
             flexShrink: 0,
             minHeight: 0,
             display: 'flex',
@@ -549,15 +586,14 @@ export default function CountingInterface() {
             gap: 2,
             p: 2,
             bgcolor: 'background.default',
-            borderLeft: 1,
-            borderColor: 'divider',
+            maxHeight: { xs: '42vh', md: 'none' },
             overflowY: 'auto',
             overflowX: 'hidden',
           }}
         >
           <Paper sx={{ p: 2, flexShrink: 0 }}>
             <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ mb: 1.5 }}>
-              Summary
+              {S.techDashSummary}
             </Typography>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -589,7 +625,7 @@ export default function CountingInterface() {
 
           <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
             <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ px: 2, pt: 2, pb: 1 }}>
-              Activity
+              {S.techDashActivity}
             </Typography>
             <List
               dense
@@ -655,11 +691,11 @@ export default function CountingInterface() {
                           : {},
                     }}
                     secondaryAction={
-                      a.action === 'extraction' &&
                       !surgeryPendingStart &&
-                      !extractionCompleted &&
-                      !a._optimistic && (
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setActivityModal(a); }}>
+                      !a._optimistic &&
+                      a.action === 'extraction' &&
+                      !extractionCompleted && (
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setActivityModal(a); }} aria-label={S.correctGraftType}>
                           <MoreVertIcon fontSize="small" />
                         </IconButton>
                       )
@@ -709,9 +745,9 @@ export default function CountingInterface() {
         <DialogContent sx={{ pt: 2 }}>
           {activityModal && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {(graftButtons || []).map((btn) => (
+              {(graftButtonsSorted || []).map((btn, i) => (
                 <Chip
-                  key={btn.label}
+                  key={graftButtonKey(btn, 0, i)}
                   label={btn.label}
                   onClick={() => setActivityEditLabel(btn.label)}
                   color={activityEditLabel === btn.label ? 'primary' : 'default'}
@@ -753,7 +789,7 @@ export default function CountingInterface() {
           setBulkModalOpen(false);
           setBulkModalInitialLabel('');
         }}
-        buttons={activeButtons}
+        buttons={sortGraftButtonsByGraftType(activeButtons)}
         initialLabel={bulkModalInitialLabel}
         onSave={handleBulkSave}
       />

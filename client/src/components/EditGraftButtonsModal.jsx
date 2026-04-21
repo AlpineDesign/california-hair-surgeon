@@ -100,13 +100,13 @@ export default function EditGraftButtonsModal({ open, onClose, buttons = [], onC
     if (open) {
       const raw = buttons || [];
       const seen = new Set();
-      const deduped = raw.filter((b) => {
+      const uniqueByLabel = raw.filter((b) => {
         const lbl = (b?.label || '').trim();
         if (!lbl || seen.has(lbl)) return false;
         seen.add(lbl);
         return true;
       });
-      setLocalButtons(deduped);
+      setLocalButtons(uniqueByLabel);
       setNewIntact('');
       setNewTotal('');
     }

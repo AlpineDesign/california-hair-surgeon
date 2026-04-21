@@ -15,7 +15,7 @@ import TableLoader from '../../components/TableLoader';
 import RowMenu from '../../components/RowMenu';
 import NewSurgeryModal from './NewSurgeryModal';
 import EditSurgeryModal from './EditSurgeryModal';
-import { getTotalGrafts, getGoalPct, formatDate } from '../../utils/surgery';
+import { getGraftProgressCurrent, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 
@@ -105,7 +105,7 @@ export default function Surgeries() {
                   <TableRow
                     key={sid}
                     hover
-                    onClick={() => navigate(`/dashboard/surgeries/${sid}`)}
+                    onClick={() => navigate(`/dashboard/surgeries/${sid}`, { state: { surgeryPreview: s } })}
                     sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>
@@ -120,7 +120,7 @@ export default function Surgeries() {
                       <Typography variant="body2">{formatDate(s.startedAt || s.createdAt)}</Typography>
                     </TableCell>
                     <TableCell sx={{ minWidth: 260 }}>
-                      <GraftProgressBar current={getTotalGrafts(s)} goal={s.graftGoal ?? 0} />
+                      <GraftProgressBar current={getGraftProgressCurrent(s)} goal={s.graftGoal ?? 0} />
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600}>{getGoalPct(s)}</Typography>
