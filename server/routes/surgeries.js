@@ -20,6 +20,16 @@ function toId(ref) {
   return ref?.objectId ?? ref?.id ?? null;
 }
 
+function sumExtractionEntryCounts(entries) {
+  return (entries || []).reduce((a, e) => a + (Number(e.count) || 0), 0);
+}
+
+/** Rollup graft total from surgery.extraction.entries (same source as the completed report). */
+function graftTotalFromSurgeryParseObject(s) {
+  const ext = s.get('extraction') || {};
+  return sumExtractionEntryCounts(ext.entries);
+}
+
 async function getSurgeryForAccess(id, req) {
   const surgery = await new Parse.Query(Surgery).get(id, { useMasterKey: true });
   if (!surgery) return null;
@@ -31,46 +41,65 @@ async function getSurgeryForAccess(id, req) {
   return surgery;
 }
 
-/** True extraction graft count from ActivityLog (matches bench clicks; may differ from extraction.entries if data drifted). */
+/**
+ * Extraction rows in ActivityLog for a surgery — same notion as GET /activities (all techs, extraction only).
+ * Uses OR(string id, Pointer) because legacy rows may store surgeryId as a string or as a Surgery pointer;
+ * a single equalTo often only matches one shape and undercounts (e.g. 327 vs 1127).
+ */
 async function getExtractionGraftCountForSurgeryId(surgeryId) {
-  const q = new Parse.Query(ActivityLog);
-  q.equalTo('surgeryId', surgeryId);
-  q.equalTo('action', 'extraction');
-  return q.count({ useMasterKey: true });
+  try {
+    const ptr = Surgery.createWithoutData(surgeryId);
+    const qStr = new Parse.Query(ActivityLog);
+    qStr.equalTo('surgeryId', surgeryId);
+    qStr.equalTo('action', 'extraction');
+    const qPtr = new Parse.Query(ActivityLog);
+    qPtr.equalTo('surgeryId', ptr);
+    qPtr.equalTo('action', 'extraction');
+    return await Parse.Query.or(qStr, qPtr).count({ useMasterKey: true });
+  } catch (err) {
+    console.error('ActivityLog compound count failed; using string surgeryId only', err);
+    const q = new Parse.Query(ActivityLog);
+    q.equalTo('surgeryId', surgeryId);
+    q.equalTo('action', 'extraction');
+    return q.count({ useMasterKey: true });
+  }
 }
+
+const EXTRACTION_COUNT_BATCH = 20;
 
 async function getExtractionGraftCountsBySurgeryIds(surgeryIds, surgeryObjects) {
   if (!surgeryIds.length) return {};
-  // Parse pipeline stages use lowercase keys; grouped id is often objectId in results.
-  const pipeline = [
-    { match: { action: 'extraction', surgeryId: { $in: surgeryIds } } },
-    { group: { objectId: '$surgeryId', count: { $sum: 1 } } },
-  ];
-  try {
-    const aq = new Parse.Query(ActivityLog);
-    const rows = await aq.aggregate(pipeline, { useMasterKey: true });
-    const map = {};
-    for (const row of rows) {
-      const sid = row.objectId ?? row._id;
-      if (sid != null) map[sid] = row.count;
-    }
-    return map;
-  } catch (err) {
-    console.error('ActivityLog aggregate failed', err);
-    if (!surgeryObjects?.length) return {};
-    const map = {};
-    for (const s of surgeryObjects) {
-      const ext = s.get('extraction') || {};
-      const entries = ext.entries || [];
-      map[s.id] = entries.reduce((a, e) => a + (e.count || 0), 0);
+  const map = {};
+  const list = surgeryObjects?.length ? surgeryObjects : null;
+  if (list) {
+    for (let i = 0; i < list.length; i += EXTRACTION_COUNT_BATCH) {
+      const chunk = list.slice(i, i + EXTRACTION_COUNT_BATCH);
+      await Promise.all(
+        chunk.map(async (s) => {
+          const logCount = await getExtractionGraftCountForSurgeryId(s.id);
+          const fromEntries = graftTotalFromSurgeryParseObject(s);
+          map[s.id] = Math.max(logCount, fromEntries);
+        }),
+      );
     }
     return map;
   }
+  for (let i = 0; i < surgeryIds.length; i += EXTRACTION_COUNT_BATCH) {
+    const chunk = surgeryIds.slice(i, i + EXTRACTION_COUNT_BATCH);
+    await Promise.all(
+      chunk.map(async (id) => {
+        map[id] = await getExtractionGraftCountForSurgeryId(id);
+      }),
+    );
+  }
+  return map;
 }
 
 async function surgeryJsonWithExtractionGraftCount(surgery) {
   const json = toJSON(surgery);
-  json.extractionGraftCount = await getExtractionGraftCountForSurgeryId(surgery.id);
+  const logCount = await getExtractionGraftCountForSurgeryId(surgery.id);
+  const fromEntries = sumExtractionEntryCounts(json.extraction?.entries);
+  json.extractionGraftCount = Math.max(logCount, fromEntries);
   return json;
 }
 

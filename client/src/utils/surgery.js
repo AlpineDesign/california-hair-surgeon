@@ -18,13 +18,15 @@ export function getTotalGrafts(surgery) {
 }
 
 /**
- * Grafts extracted toward the goal — prefers API `extractionGraftCount` (ActivityLog count)
- * so list/progress bars match bench clicks when extraction.entries drifts.
+ * Grafts extracted toward the goal — uses the higher of rollup (`extraction.entries`) and
+ * API `extractionGraftCount` (ActivityLog row count, aligned with GET /activities). Max covers
+ * entries vs log drift in either direction.
  */
 export function getGraftProgressCurrent(surgery) {
+  const fromEntries = getTotalGrafts(surgery);
   const n = surgery?.extractionGraftCount;
-  if (typeof n === 'number' && !Number.isNaN(n) && n >= 0) return n;
-  return getTotalGrafts(surgery);
+  if (typeof n !== 'number' || Number.isNaN(n) || n < 0) return fromEntries;
+  return Math.max(fromEntries, n);
 }
 
 export function getGoalPct(surgery) {

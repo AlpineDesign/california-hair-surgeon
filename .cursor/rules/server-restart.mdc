@@ -1,0 +1,15 @@
+---
+description: Restart the Node API after editing /server (no hot reload)
+alwaysApply: true
+---
+
+# Server changes → restart the API
+
+Express/Parse run in a normal Node process — **there is no hot reload for `/server`**.
+
+**After you edit anything under `/server`**, restart the API in the same session so the running process loads the new code (unless the user explicitly says not to).
+
+- From repo root: `NODE_ENV=development npm start` (this project’s dev server is typically **port 8080**).
+- If something is already bound to that port, stop it first, then start again (e.g. `lsof -ti:8080 2>/dev/null | xargs kill -9 2>/dev/null`, then `npm start`). Match whatever the user already uses in their terminals if it differs.
+
+The React app on port 3000 hot-reloads on its own; **only the backend needs a manual restart**.
