@@ -13,6 +13,11 @@ module.exports = {
   port,
   isDevelopment: IS_DEVELOPMENT,
 
+  /** When true, POST /api/app-test/purge-account can wipe all data for the signed-in account (owner only). */
+  enableAppTestHarness:
+    process.env.ENABLE_APP_TEST_HARNESS === '1' ||
+    process.env.ENABLE_APP_TEST_HARNESS === 'true',
+
   databaseURI: 'mongodb+srv://admin:ZI1ubBPvRsbuMWu0@base.ptixesf.mongodb.net/?appName=base',
 
   parse: {

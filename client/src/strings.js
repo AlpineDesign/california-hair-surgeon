@@ -351,6 +351,43 @@ const strings = {
 
   pickSurgery: 'Pick a Surgery',
   counting: 'Counting',
+
+  appTestTitle: 'API test harness',
+  appTestIntro:
+    'Runs API calls one after another and records duration in milliseconds. Purge requires the server to be started with ENABLE_APP_TEST_HARNESS=1 (deletes the entire test account). Does not use your normal browser session.',
+  appTestRun: 'Run full sequence',
+  appTestRunning: 'Running…',
+  appTestStep: 'Step',
+  appTestMs: 'ms',
+  appTestTotal: 'Total',
+  appTestStatus: 'Result',
+  appTestOk: 'OK',
+  appTestFail: 'Failed',
+  appTestHarnessDisabled: 'Purge skipped or failed: enable ENABLE_APP_TEST_HARNESS=1 on the server.',
+
+  appTestStep_signup: '1. Signup (create account + seed)',
+  appTestStep_login: '2. Login',
+  appTestStep_createDoctor: '3. Create doctor user',
+  appTestStep_createTechnician: '4. Create technician user',
+  appTestStep_createPatient: '5. Create patient',
+  appTestStep_createSurgery: '6. Create surgery',
+  appTestStep_loadSurgeries: '7. GET surgeries (list)',
+  appTestStep_loadPatients: '8. GET patients (list)',
+  appTestStep_loadHome: '9. GET surgeries (home-style refresh)',
+  appTestStep_loadSurgeryDetail: '10. GET surgery by id',
+  appTestStep_loadOptions: '11. GET settings options',
+  appTestStep_startSurgery: '12. PATCH surgery → active (start)',
+  appTestStep_loginTech: '13. Login as technician',
+  appTestStep_loadSurgeriesTech: '14. GET surgeries as technician',
+  appTestStep_loadSurgeryTech: '15. GET surgery as technician',
+  appTestStep_activities100: '16. POST 100 extraction activities (sequential)',
+  appTestStep_logoutTech: '17. Clear session (technician)',
+  appTestStep_loginDoctor: '18. Login as doctor',
+  appTestStep_loadSurgeriesDr: '19. GET surgeries as doctor',
+  appTestStep_loadSurgeryDr: '20. GET surgery as doctor',
+  appTestStep_loadActivities: '21. GET surgery activities',
+  appTestStep_loginOwnerPurge: '22. Login as account owner (before purge)',
+  appTestStep_purge: '23. Purge test account (server)',
 };
 
 export default strings;

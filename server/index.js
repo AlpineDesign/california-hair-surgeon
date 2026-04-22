@@ -24,6 +24,7 @@ async function start() {
   const defaultsRoutes = require('./routes/defaults');
   const patientRoutes  = require('./routes/patients');
   const optionsRoutes  = require('./routes/options');
+  const appTestRoutes  = require('./routes/appTest');
 
   app.use('/api/auth',      authRoutes);
   app.use('/api/surgeries', surgeryRoutes);
@@ -33,6 +34,7 @@ async function start() {
   app.use('/api/accounts',  accountRoutes);
   app.use('/api/defaults',  defaultsRoutes);
   app.use('/api/patients',  patientRoutes);
+  app.use('/api/app-test',  appTestRoutes);
 
   // Production: serve React build
   if (config.isDevelopment === false) {

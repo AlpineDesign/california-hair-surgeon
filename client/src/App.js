@@ -32,6 +32,7 @@ import RemoteHome from './pages/remote/RemoteHome';
 import RemoteSurgeries from './pages/remote/RemoteSurgeries';
 import RemoteSettings from './pages/remote/RemoteSettings';
 import CountingInterface from './pages/remote/CountingInterface';
+import AppTests from './pages/dev/AppTests';
 
 export default function App() {
   return (
@@ -45,6 +46,8 @@ export default function App() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
             </Route>
+
+            <Route path="/app-tests" element={<AppTests />} />
 
             <Route element={<AccountLayout />}>
               <Route path="/dashboard" element={<AccountHome />} />
