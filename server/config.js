@@ -8,7 +8,7 @@ const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 const port = process.env.PORT || 8080;
 
 // No trailing slash. Set to your AWS service URL when live (or keep during GCP→AWS migration).
-const productionBaseUrl = 'https://californiahairsurgeon-691066386045.us-central1.run.app';
+const productionBaseUrl = 'https://csmykg2r38.us-east-1.awsapprunner.com/';
 
 module.exports = {
   port,
@@ -42,7 +42,7 @@ module.exports = {
   // On App Runner / ECS / Fargate, attach an IAM role with s3:PutObject/GetObject/DeleteObject on this bucket
   // and omit accessKey / secretKey. For local dev you can set keys here or use ~/.aws/credentials.
   s3: {
-    bucket: '',
+    bucket: 'surgassist-files',
     region: 'us-east-1',
     directAccess: true,
     bucketPrefix: '',
