@@ -13,6 +13,8 @@ function buildFilesAdapter() {
     bucket: s3.bucket,
     region: s3.region || 'us-east-1',
     directAccess: s3.directAccess !== false,
+    // S3 "ACLs disabled" / bucket owner enforced — omit x-amz-acl on PutObject (see S3 file ACL docs in @parse/s3-files-adapter).
+    fileAcl: 'none',
   };
   if (s3.bucketPrefix) options.bucketPrefix = s3.bucketPrefix;
   if (s3.accessKey && s3.secretKey) {
