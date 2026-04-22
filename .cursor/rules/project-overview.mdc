@@ -8,8 +8,9 @@ alwaysApply: true
 A lightweight practice management tool for small hair surgery centers. Keep everything simple — this is NOT a complex enterprise app.
 
 ## Tech Stack
-- **Hosting**: Google Cloud
-- **Database**: MongoDB Atlas
+- **Hosting**: AWS (App Runner / ECS — see `docs/DEPLOY-AWS.md`; legacy GCP doc: `docs/DEPLOY-TO-GOOGLE-CLOUD.md`)
+- **Database**: Amazon DocumentDB (MongoDB-compatible) or MongoDB Atlas during migration
+- **Files**: Amazon S3 via `@parse/s3-files-adapter` when `server/config.js` `s3.bucket` is set; otherwise GridFS
 - **Backend**: Node.js + Express (`/server/index.js`)
 - **Parse Server**: Isolated entirely to `/server/parse.js` — no Parse logic anywhere else
 - **Frontend**: React JS (`/client`)

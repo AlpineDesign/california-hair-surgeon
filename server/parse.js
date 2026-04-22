@@ -5,20 +5,31 @@ const ParseDashboard = require('parse-dashboard');
 const Parse = require('parse/node');
 const config = require('./config');
 
+function buildFilesAdapter() {
+  const s3 = config.s3;
+  if (!s3?.bucket) return undefined;
+
+  const options = {
+    bucket: s3.bucket,
+    region: s3.region || 'us-east-1',
+    directAccess: s3.directAccess !== false,
+  };
+  if (s3.bucketPrefix) options.bucketPrefix = s3.bucketPrefix;
+  if (s3.accessKey && s3.secretKey) {
+    options.accessKey = s3.accessKey;
+    options.secretKey = s3.secretKey;
+  }
+
+  return {
+    module: '@parse/s3-files-adapter',
+    options,
+  };
+}
+
 module.exports = async function mountParseServer(app) {
   const { appId, masterKey, serverURL, masterKeyIps } = config.parse;
 
-  const filesAdapter = config.gcs?.bucket && config.gcs?.projectId
-    ? {
-        module: '@parse/gcs-files-adapter',
-        options: {
-          projectId: config.gcs.projectId,
-          keyFilename: config.gcs.keyFilename,
-          bucket: config.gcs.bucket,
-          directAccess: true,
-        },
-      }
-    : undefined;
+  const filesAdapter = buildFilesAdapter();
 
   const server = new ParseServer({
     databaseURI: config.databaseURI,

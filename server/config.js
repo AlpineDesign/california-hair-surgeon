@@ -1,12 +1,13 @@
 // Hardcoded config (mirrors kent-d365-connector approach — no .env)
 // Edit values below for your environment.
-// PORT still comes from process.env for Cloud Run compatibility.
+// PORT still comes from process.env (Cloud Run, App Runner, ECS, etc.).
 // Default 8080: matches client/src/api/client.js in dev; macOS reserves 5000 for AirPlay Receiver.
 // WARNING: This file contains secrets. Do not commit if the repo is public.
 
 const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 const port = process.env.PORT || 8080;
 
+// No trailing slash. Set to your AWS service URL when live (or keep during GCP→AWS migration).
 const productionBaseUrl = 'https://californiahairsurgeon-691066386045.us-central1.run.app';
 
 module.exports = {
@@ -18,6 +19,7 @@ module.exports = {
     process.env.ENABLE_APP_TEST_HARNESS === '1' ||
     process.env.ENABLE_APP_TEST_HARNESS === 'true',
 
+  // Atlas today; swap for Amazon DocumentDB URI when the cluster is ready (TLS + retryWrites params per AWS docs).
   databaseURI: 'mongodb+srv://admin:ZI1ubBPvRsbuMWu0@base.ptixesf.mongodb.net/?appName=base',
 
   parse: {
@@ -36,11 +38,15 @@ module.exports = {
     pass: 'Fergburger<3',
   },
 
-  // GCS file storage (for logo uploads). Set bucket empty to use GridFS (MongoDB).
-  // Re-enable after first successful deploy and GCS bucket permissions are set.
-  gcs: {
-    bucket: '', // was: run-sources-california-hair-surgeon-us-central1
-    projectId: 'california-hair-surgeon',
-    keyFilename: undefined,
+  // S3 via @parse/s3-files-adapter (logo uploads = Parse.File). Leave bucket empty to use GridFS in MongoDB.
+  // On App Runner / ECS / Fargate, attach an IAM role with s3:PutObject/GetObject/DeleteObject on this bucket
+  // and omit accessKey / secretKey. For local dev you can set keys here or use ~/.aws/credentials.
+  s3: {
+    bucket: '',
+    region: 'us-east-1',
+    directAccess: true,
+    bucketPrefix: '',
+    accessKey: '',
+    secretKey: '',
   },
 };

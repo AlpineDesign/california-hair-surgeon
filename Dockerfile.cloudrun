@@ -1,5 +1,5 @@
-# Dockerfile for Google Cloud Run
-# Used by cloudbuild.yaml (separate from any Heroku/default Dockerfile)
+# Production Docker image: React build + Node API (same image for GCP Cloud Run or AWS App Runner / ECS).
+# Used by cloudbuild.yaml; on AWS, build and push to ECR with the same file.
 
 FROM node:20-alpine AS client
 WORKDIR /app/client
