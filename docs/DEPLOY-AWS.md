@@ -52,15 +52,14 @@ App Runner clones your repo and builds the image in AWS. You only use the **AWS 
 
 1. **App Runner** → **Create service**.
 2. **Source**: **Source code repository** → **GitHub** → connect the AWS GitHub app → choose **repository** and branch (**`aws`**).
-3. **Build settings**: **Use a Dockerfile** (container build).
-4. **Dockerfile path**: `Dockerfile.cloudrun`.
-5. **Runtime / service**:
-   - **Port**: `8080`.
-   - **Start command**: leave empty (image `CMD` already runs `node server/index.js`).
-6. **Instance role**: attach **`surgassist-apprunner-instance`** from A4.
-7. **Networking**: attach the **VPC connector** from A5.
-8. **Automatic deployments**: enable if you want every push to rebuild.
-9. Create the service and wait until it’s **Running**.
+3. **Build settings:** many consoles only list **managed** runtimes (Node, Python, …)—**no Docker**. Use one of:
+   - **Use a configuration file** (recommended): commit **`apprunner.yaml`** at the repo root (Node 22: install server deps, build `client/`, run `node server/index.js`). Then select this option and continue.
+   - **Configure all settings here** → **Runtime: Nodejs 22** → **Build:** `npm install --omit=dev && cd client && npm install && npm run build && cd ..` → **Start:** `node server/index.js` → **Port:** `8080`. (Not `node server.js`.)
+   - If your UI offers **Docker**, you can use **Dockerfile** path `Dockerfile.cloudrun` and empty start command instead.
+4. **Instance role**: attach **`surgassist-apprunner-instance`** from A4.
+5. **Networking**: attach the **VPC connector** from A5.
+6. **Automatic deployments**: enable if you want every push to rebuild.
+7. Create the service and wait until it’s **Running**.
 
 ### A7. Config URL + S3 bucket name
 
