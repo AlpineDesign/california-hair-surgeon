@@ -46,6 +46,9 @@ module.exports = async function mountParseServer(app) {
     masterKeyIps,
     allowClientClassCreation: false,
     filesAdapter,
+    // Amazon DocumentDB does not support `collation` on indexes. Parse only skips those _User
+    // index creations when this is *true* (name is easy to read backwards; see Parse 9+ docs / PR #8805).
+    ...(config.useDocumentDb ? { enableCollationCaseComparison: true } : {}),
   });
 
   // v7+ requires explicit start() before mounting

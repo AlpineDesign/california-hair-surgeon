@@ -44,6 +44,9 @@ module.exports = {
   port,
   isDevelopment: IS_DEVELOPMENT,
 
+  /** True when `databaseURI` points at Amazon DocumentDB (parse.js uses this for Parse Server compatibility). */
+  useDocumentDb: USE_DOCUMENTDB,
+
   /** Same URI used when `USE_DOCUMENTDB` is true; for `mongorestore` from a host that can reach the cluster. */
   getDocumentDbUri: buildDocumentDatabaseURI,
 
