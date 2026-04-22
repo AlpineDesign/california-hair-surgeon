@@ -29,6 +29,13 @@ function buildFilesAdapter() {
 module.exports = async function mountParseServer(app) {
   const { appId, masterKey, serverURL, masterKeyIps } = config.parse;
 
+  // Parse Server advertises `serverURL` (HTTPS) to browsers/dashboards. The Node SDK must not
+  // call that public URL from inside the same container (hairpin through the load balancer often fails
+  // on App Runner / Cloud Run). Use loopback for server-side Parse.User.logIn and masterKey queries.
+  const parseNodeSdkURL = config.isDevelopment
+    ? serverURL
+    : `http://127.0.0.1:${config.port}/parse`;
+
   const filesAdapter = buildFilesAdapter();
 
   const server = new ParseServer({
@@ -60,7 +67,7 @@ module.exports = async function mountParseServer(app) {
   // Initialize the Parse Node SDK for server-side use in all routes.
   // Third argument is masterKey — routes use { useMasterKey: true } to bypass ACLs.
   Parse.initialize(appId, null, masterKey);
-  Parse.serverURL = serverURL;
+  Parse.serverURL = parseNodeSdkURL;
 };
 
 // Export the initialized Parse instance so route files can require it.

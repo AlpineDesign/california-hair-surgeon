@@ -27,6 +27,8 @@ router.post('/login', async (req, res) => {
     await touchLastActiveAt(user.id);
     res.json({ token: user.getSessionToken(), user: userPayload(user) });
   } catch (err) {
+    // Parse login failures are often code 101; DB / network errors look the same to the client unless we log them.
+    console.error('[auth/login]', err.code, err.message);
     res.status(401).json({ error: 'Invalid credentials' });
   }
 });

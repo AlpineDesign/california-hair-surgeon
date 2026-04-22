@@ -4,9 +4,12 @@ const cors = require('cors');
 const config = require('./config');
 
 const app = express();
+// App Runner / ALB terminate TLS; Express must honor X-Forwarded-Proto so Parse Dashboard sees HTTPS.
+app.set('trust proxy', 1);
 
+const clientOrigin = String(config.clientUrl || '').replace(/\/$/, '');
 app.use(cors({
-  origin: config.clientUrl,
+  origin: clientOrigin,
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Scope-Account-Id'],
 }));
 // Logo upload POSTs base64 JSON; default 100kb is too small (see /api/accounts/logo).

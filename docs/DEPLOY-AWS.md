@@ -32,7 +32,8 @@ App Runner clones your repo and builds the image in AWS. You only use the **AWS 
 1. **DocumentDB** → **Subnet groups** → create using the **private** subnets from A1.
 2. Create a **cluster** (and instance). Note **cluster endpoint**, **master username**, **password**.
 3. Attach **`docdb-sg`** to the cluster.
-4. When you’re ready to point the app at DocumentDB: add TLS (see **DocumentDB TLS** below), set `databaseURI` in `server/config.js`, commit, push. Until then you can keep **Atlas** in `databaseURI` for a first green deploy (open Atlas network access appropriately).
+4. In **`server/config.js`**: set **`documentDbHost`**, **`documentDbUser`**, **`documentDbPassword`**, **`documentDbName`** (e.g. `parse`). The RDS CA file is **`server/certs/global-bundle.pem`** (already in repo). Set **`USE_DOCUMENTDB`** to **`true`**, commit, push. Until then leave **`USE_DOCUMENTDB: false`** and keep **Atlas**.
+5. If auth fails, try removing **`authSource=admin`** from the URI builder in `config.js` or set it to the DB AWS documented for your user.
 
 ### A4. S3
 
@@ -89,13 +90,11 @@ Create an App Runner service from the **ECR** image instead of GitHub. Same port
 
 ---
 
-## DocumentDB TLS (when `databaseURI` points at DocumentDB)
+## DocumentDB TLS
 
-DocumentDB requires TLS. Download the [RDS CA bundle](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html) (`global-bundle.pem`), add it to the repo (e.g. `server/certs/global-bundle.pem`), and in **`Dockerfile.cloudrun`** add:
+TLS uses **`server/certs/global-bundle.pem`** (AWS [global bundle](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html)). **`server/config.js`** builds `tlsCAFile` with `path.join(__dirname, 'certs', 'global-bundle.pem')` so it works locally and on App Runner (`/app/server/...`).
 
-`COPY server/certs/global-bundle.pem /app/global-bundle.pem`
-
-Build `databaseURI` per [DocumentDB: connect programmatically](https://docs.aws.amazon.com/documentdb/latest/developerguide/connect_programmatically.html) (include `tls=true`, `tlsCAFile=/app/global-bundle.pem`, `replicaSet=rs0`, `readPreference=secondaryPreferred`, `retryWrites=false` as documented).
+Container-only deploys: ensure the PEM is copied in the image (root **`Dockerfile.cloudrun`** already copies all of **`server/`**).
 
 ---
 

@@ -4,11 +4,41 @@
 // Default 8080: matches client/src/api/client.js in dev; macOS reserves 5000 for AirPlay Receiver.
 // WARNING: This file contains secrets. Do not commit if the repo is public.
 
+const path = require('path');
+
 const IS_DEVELOPMENT = process.env.NODE_ENV !== 'production';
 const port = process.env.PORT || 8080;
 
-// No trailing slash. Set to your AWS service URL when live (or keep during GCP→AWS migration).
-const productionBaseUrl = 'https://csmykg2r38.us-east-1.awsapprunner.com/';
+// No trailing slash (avoids //parse and CORS mismatches).
+const productionBaseUrl = 'https://csmykg2r38.us-east-1.awsapprunner.com'.replace(/\/$/, '');
+
+/** Set true after DocumentDB is provisioned, security groups allow App Runner, and data is migrated off Atlas. */
+const USE_DOCUMENTDB = false;
+
+const atlasDatabaseURI =
+  'mongodb+srv://admin:ZI1ubBPvRsbuMWu0@base.ptixesf.mongodb.net/?appName=base';
+
+// Amazon DocumentDB — fill from console (cluster endpoint, master user, password). TLS uses bundled RDS CA PEM.
+const documentDbHost =
+  'surgassist-docdb.cluster-cir4qgeok8id.us-east-1.docdb.amazonaws.com';
+const documentDbUser = 'surgassist';
+const documentDbPassword = '737a9a17-a17f-49a4-b89f-5540544703eb';
+/** Logical DB name for Parse/app data (create if needed, or use one you prefer). */
+const documentDbName = 'parse';
+
+function buildDocumentDatabaseURI() {
+  const tlsCAFile = path.join(__dirname, 'certs', 'global-bundle.pem');
+  const user = encodeURIComponent(documentDbUser);
+  const pass = encodeURIComponent(documentDbPassword);
+  const ca = encodeURIComponent(tlsCAFile);
+  return (
+    `mongodb://${user}:${pass}@${documentDbHost}:27017/${documentDbName}` +
+    `?tls=true&tlsCAFile=${ca}&replicaSet=rs0&readPreference=secondaryPreferred` +
+    `&retryWrites=false&authSource=admin`
+  );
+}
+
+const databaseURI = USE_DOCUMENTDB ? buildDocumentDatabaseURI() : atlasDatabaseURI;
 
 module.exports = {
   port,
@@ -19,8 +49,7 @@ module.exports = {
     process.env.ENABLE_APP_TEST_HARNESS === '1' ||
     process.env.ENABLE_APP_TEST_HARNESS === 'true',
 
-  // Atlas today; swap for Amazon DocumentDB URI when the cluster is ready (TLS + retryWrites params per AWS docs).
-  databaseURI: 'mongodb+srv://admin:ZI1ubBPvRsbuMWu0@base.ptixesf.mongodb.net/?appName=base',
+  databaseURI,
 
   parse: {
     appId: 'californiaHarSurgeon',
