@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -13,8 +13,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import S, { format } from '../strings';
-
-const BULK_MAX = 500;
+import BulkQuantityKeypad, { BULK_QUANTITY_MAX as BULK_MAX } from './BulkQuantityKeypad';
 
 export default function BulkAddModal({
   open,
@@ -27,33 +26,28 @@ export default function BulkAddModal({
   const [selectedLabel, setSelectedLabel] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Only reset graft selection / keypad when dialog opens — not when parent re-renders during save (new buttons[] refs). */
+  const hasInitializedForOpenRef = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      hasInitializedForOpenRef.current = false;
+      return;
+    }
+    if (hasInitializedForOpenRef.current) return;
+    if (buttons.length === 0) return;
+    hasInitializedForOpenRef.current = true;
     setCountStr('');
     setError('');
     setSaving(false);
     const first = buttons[0]?.label ?? '';
-    setSelectedLabel(initialLabel && buttons.some((b) => b.label === initialLabel) ? initialLabel : first);
+    setSelectedLabel(
+      initialLabel && buttons.some((b) => b.label === initialLabel) ? initialLabel : first
+    );
   }, [open, initialLabel, buttons]);
 
   const handleClose = () => {
     onClose?.();
-  };
-
-  const appendDigit = (digit) => {
-    const next = countStr === '' ? String(digit) : countStr + String(digit);
-    if (next.length > 3) return;
-    const n = parseInt(next, 10);
-    if (Number.isNaN(n)) return;
-    if (n > BULK_MAX) return;
-    setCountStr(String(n));
-    setError('');
-  };
-
-  const handleClearCount = () => {
-    setCountStr('');
-    setError('');
   };
 
   const handleSave = async () => {
@@ -124,96 +118,16 @@ export default function BulkAddModal({
               width: { xs: '100%', md: '38%' },
               display: 'flex',
               flexDirection: 'column',
-              gap: 1.5,
             }}
           >
-            <Typography variant="subtitle2" fontWeight={700} color="text.secondary">
-              {S.bulkAddCountLabel}
-            </Typography>
-            <Box
-              sx={{
-                border: 1,
-                borderColor: 'divider',
-                borderRadius: 1,
-                px: 2,
-                py: 2,
-                bgcolor: 'background.paper',
-                textAlign: 'center',
-                minHeight: 64,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+            <BulkQuantityKeypad
+              countStr={countStr}
+              onCountChange={(s) => {
+                setCountStr(s);
+                setError('');
               }}
-            >
-              <Typography
-                variant="h3"
-                component="div"
-                sx={{
-                  fontWeight: 700,
-                  fontVariantNumeric: 'tabular-nums',
-                  color: countStr ? 'text.primary' : 'text.disabled',
-                }}
-              >
-                {countStr || '—'}
-              </Typography>
-            </Box>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 1.5,
-                width: '100%',
-                maxWidth: 360,
-                mt: 1,
-              }}
-            >
-              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
-                <Button
-                  key={d}
-                  variant="outlined"
-                  size="large"
-                  onClick={() => appendDigit(Number(d))}
-                  sx={{ minHeight: 56, fontSize: '1.35rem', fontWeight: 600 }}
-                >
-                  {d}
-                </Button>
-              ))}
-            </Box>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 1.5,
-                width: '100%',
-                maxWidth: 360,
-              }}
-            >
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={handleClearCount}
-                sx={{
-                  minHeight: 56,
-                  fontWeight: 600,
-                  color: 'grey.700',
-                  borderColor: 'grey.400',
-                  '&:hover': {
-                    borderColor: 'grey.500',
-                    bgcolor: 'grey.50',
-                  },
-                }}
-              >
-                {S.bulkAddClear}
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                onClick={() => appendDigit(0)}
-                sx={{ minHeight: 56, fontSize: '1.35rem', fontWeight: 600 }}
-              >
-                0
-              </Button>
-            </Box>
+              disabled={saving}
+            />
           </Box>
           <Box
             sx={{

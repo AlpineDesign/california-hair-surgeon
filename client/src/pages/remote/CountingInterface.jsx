@@ -24,6 +24,7 @@ import {
 import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
 import BulkAddModal from '../../components/BulkAddModal';
+import BulkQuantityKeypad, { BULK_QUANTITY_MAX } from '../../components/BulkQuantityKeypad';
 import S, { format } from '../../strings';
 
 const LONG_PRESS_MS = 500;
@@ -78,6 +79,9 @@ export default function CountingInterface() {
   const [bulkModalInitialLabel, setBulkModalInitialLabel] = useState('');
   const [activityModal, setActivityModal] = useState(null);
   const [activityEditLabel, setActivityEditLabel] = useState('');
+  const [activityEditCountStr, setActivityEditCountStr] = useState('');
+  const [activityEditError, setActivityEditError] = useState('');
+  const [activityUpdating, setActivityUpdating] = useState(false);
   const longPressTimerRef = useRef(null);
   const longPressConsumedRef = useRef(false);
 
@@ -161,9 +165,13 @@ export default function CountingInterface() {
   }, [surgeryPendingStart, pollSurgeryLight]);
 
   useEffect(() => {
-    if (activityModal) {
-      setActivityEditLabel(activityModal.payload?.label ?? '');
+    if (!activityModal) {
+      setActivityUpdating(false);
+      return;
     }
+    setActivityEditLabel(activityModal.payload?.label ?? '');
+    setActivityEditCountStr(String(getActivityExtractionBulkCount(activityModal.payload)));
+    setActivityEditError('');
   }, [activityModal]);
 
   const graftButtons = surgery?.graftButtons ?? [];
@@ -248,33 +256,57 @@ export default function CountingInterface() {
     }
   };
 
-  const handleActivityEdit = async (newLabel) => {
+  const handleActivityConfirm = async () => {
     if (!activityModal || !id) return;
-    const btn = graftButtons.find((b) => b.label === newLabel);
-    if (!btn) return;
+    setActivityEditError('');
+    const n = parseInt(activityEditCountStr, 10);
+    if (Number.isNaN(n) || n < 1) {
+      setActivityEditError(S.bulkAddInvalidCount);
+      return;
+    }
+    if (n > BULK_QUANTITY_MAX) {
+      setActivityEditError(format(S.bulkAddMaxCount, { max: BULK_QUANTITY_MAX }));
+      return;
+    }
+    const btn = graftButtons.find((b) => b.label === activityEditLabel);
+    if (!btn) {
+      setActivityEditError(S.bulkAddSelectType);
+      return;
+    }
     try {
-      const { surgery: updated } = await updateActivity(id, activityModal.id, {
+      setActivityUpdating(true);
+      const aid = activityModal.id || activityModal.objectId;
+      const patch = {
         label: btn.label,
-        intactHairs: btn.intactHairs,
-        totalHairs: btn.totalHairs,
-      });
+        intactHairs: btn.intactHairs ?? 0,
+        totalHairs: btn.totalHairs ?? 1,
+        ...(n > 1 ? { count: n } : {}),
+      };
+      const { surgery: updated } = await updateActivity(id, aid, patch);
       setSurgery((prev) => mergeSurgeryPatch(prev, updated));
       fetchActivities();
       setActivityModal(null);
     } catch (err) {
       console.error('Failed to update activity', err);
+      setActivityEditError(S.bulkAddFailed);
+    } finally {
+      setActivityUpdating(false);
     }
   };
 
   const handleActivityDelete = async () => {
-    if (!activityModal || !id) return;
+    if (!activityModal || !id || activityUpdating) return;
     try {
-      const { surgery: updated } = await deleteActivity(id, activityModal.id);
+      setActivityUpdating(true);
+      const aid = activityModal.id || activityModal.objectId;
+      const { surgery: updated } = await deleteActivity(id, aid);
       setSurgery((prev) => mergeSurgeryPatch(prev, updated));
       fetchActivities();
       setActivityModal(null);
     } catch (err) {
       console.error('Failed to delete activity', err);
+    } finally {
+      setActivityUpdating(false);
     }
   };
 
@@ -682,14 +714,49 @@ export default function CountingInterface() {
                           : {},
                     }}
                     secondaryAction={
-                      !surgeryPendingStart &&
-                      !a._optimistic &&
-                      a.action === 'extraction' &&
-                      !extractionCompleted && (
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); setActivityModal(a); }} aria-label={S.correctGraftType}>
-                          <MoreVertIcon fontSize="small" />
-                        </IconButton>
-                      )
+                      (() => {
+                        const bulkUnits = getActivityExtractionBulkCount(a.payload);
+                        const showMenu =
+                          !surgeryPendingStart &&
+                          !a._optimistic &&
+                          a.action === 'extraction' &&
+                          !extractionCompleted;
+                        if (bulkUnits <= 1 && !showMenu) return null;
+                        return (
+                          <Box
+                            sx={{ display: 'flex', alignItems: 'center', height: '100%' }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {bulkUnits > 1 && (
+                              <Typography
+                                component="span"
+                                variant="body2"
+                                fontWeight={700}
+                                color="text.secondary"
+                                sx={{
+                                  fontVariantNumeric: 'tabular-nums',
+                                  pr: showMenu ? 0.25 : 0,
+                                  userSelect: 'none',
+                                }}
+                              >
+                                {format(S.activityBulkMultiplier, { count: bulkUnits })}
+                              </Typography>
+                            )}
+                            {showMenu && (
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActivityModal(a);
+                                }}
+                                aria-label={S.correctGraftType}
+                              >
+                                <MoreVertIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </Box>
+                        );
+                      })()
                     }
                   >
                     <ListItemText
@@ -707,13 +774,20 @@ export default function CountingInterface() {
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               color: 'grey.800',
+                              display: 'inline-flex',
+                              alignItems: 'baseline',
                             }}
                           >
-                            {(() => {
-                              const units = getActivityExtractionBulkCount(a.payload);
-                              const lbl = a.payload?.label ?? a.action;
-                              return units > 1 ? format(S.activityLogBulkPrimary, { count: units, label: lbl }) : lbl;
-                            })()}
+                            {(a.payload?.label ?? a.action).split('/').map((part, i) => (
+                              <Box key={i} component="span">
+                                {i > 0 && (
+                                  <Box component="span" sx={{ opacity: 0.5 }}>
+                                    /
+                                  </Box>
+                                )}
+                                {part}
+                              </Box>
+                            ))}
                           </Box>
                           {formatTime(a.createdAt)}
                         </Box>
@@ -728,34 +802,113 @@ export default function CountingInterface() {
         </Box>
       </Box>
 
-      {/* Activity edit modal — pill list + footer actions */}
-      <Dialog open={!!activityModal} onClose={() => setActivityModal(null)} maxWidth="xs" fullWidth>
+      {/* Activity edit modal — quantity keypad + graft type (same layout as bulk add) */}
+      <Dialog
+        open={!!activityModal}
+        onClose={() => !activityUpdating && setActivityModal(null)}
+        maxWidth={false}
+        fullWidth
+        PaperProps={{
+          sx: {
+            width: '90vw',
+            height: '90vh',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
+      >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pr: 1 }}>
           {S.correctGraftType}
-          <IconButton onClick={() => setActivityModal(null)} size="small" aria-label={S.cancel}>
+          <IconButton onClick={() => !activityUpdating && setActivityModal(null)} size="small" aria-label={S.cancel}>
             <CloseIcon />
           </IconButton>
         </DialogTitle>
         <Divider />
-        <DialogContent sx={{ pt: 2 }}>
+        <DialogContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, pt: 2 }}>
           {activityModal && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {(graftButtonsSorted || []).map((btn, i) => (
-                <Chip
-                  key={graftButtonKey(btn, 0, i)}
-                  label={btn.label}
-                  onClick={() => setActivityEditLabel(btn.label)}
-                  color={activityEditLabel === btn.label ? 'primary' : 'default'}
-                  variant={activityEditLabel === btn.label ? 'filled' : 'outlined'}
+            <>
+              <Box
+                sx={{
+                  flex: 1,
+                  display: 'flex',
+                  flexDirection: { xs: 'column', md: 'row' },
+                  gap: 3,
+                  minHeight: 0,
+                }}
+              >
+                <Box
                   sx={{
-                    cursor: 'pointer',
-                    fontSize: '1.5rem',
-                    minHeight: 48,
-                    '& .MuiChip-label': { px: 2 },
+                    flex: '0 0 auto',
+                    width: { xs: '100%', md: '38%' },
+                    display: 'flex',
+                    flexDirection: 'column',
                   }}
-                />
-              ))}
-            </Box>
+                >
+                  <BulkQuantityKeypad
+                    countStr={activityEditCountStr}
+                    onCountChange={(s) => {
+                      setActivityEditCountStr(s);
+                      setActivityEditError('');
+                    }}
+                    disabled={activityUpdating}
+                  />
+                </Box>
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    borderLeft: { md: 1 },
+                    borderTop: { xs: 1, md: 0 },
+                    borderColor: 'divider',
+                    pl: { md: 3 },
+                    pt: { xs: 2, md: 0 },
+                  }}
+                >
+                  <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ mb: 2 }}>
+                    {S.graftType}
+                  </Typography>
+                  <Box
+                    sx={{
+                      flex: 1,
+                      overflow: 'auto',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignContent: 'flex-start',
+                      gap: 2,
+                    }}
+                  >
+                    {(graftButtonsSorted || []).map((btn, i) => (
+                      <Chip
+                        key={graftButtonKey(btn, 0, i)}
+                        label={btn.label}
+                        onClick={() => {
+                          setActivityEditLabel(btn.label);
+                          setActivityEditError('');
+                        }}
+                        color={activityEditLabel === btn.label ? 'primary' : 'default'}
+                        variant={activityEditLabel === btn.label ? 'filled' : 'outlined'}
+                        disabled={activityUpdating}
+                        sx={{
+                          cursor: 'pointer',
+                          fontSize: '1.5rem',
+                          minHeight: 48,
+                          '& .MuiChip-label': { px: 2 },
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              </Box>
+              {activityEditError && (
+                <Typography color="error" variant="body2" sx={{ mt: 2 }}>
+                  {activityEditError}
+                </Typography>
+              )}
+            </>
           )}
         </DialogContent>
         <Divider />
@@ -769,10 +922,10 @@ export default function CountingInterface() {
             flexWrap: 'wrap',
           }}
         >
-          <Button color="error" onClick={handleActivityDelete}>
+          <Button color="error" onClick={handleActivityDelete} disabled={activityUpdating}>
             {S.delete}
           </Button>
-          <Button variant="contained" onClick={() => handleActivityEdit(activityEditLabel)}>
+          <Button variant="contained" onClick={handleActivityConfirm} disabled={activityUpdating}>
             {S.update}
           </Button>
         </DialogActions>

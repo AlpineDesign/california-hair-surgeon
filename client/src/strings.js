@@ -149,6 +149,7 @@ const strings = {
   bulkAddSelectType: 'Select a graft type.',
   bulkAddFailed: 'Could not add grafts. Try again or a smaller count.',
   activityLogBulkPrimary: '{count}× {label}',
+  activityBulkMultiplier: '{count}×',
   bulkAddClear: 'Clear',
   graftType: 'Graft type',
   viewReport: 'View Report',
