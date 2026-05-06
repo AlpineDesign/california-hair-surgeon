@@ -19,6 +19,7 @@ import GraftProgressBar from '../../components/GraftProgressBar';
 import {
   formatDate, formatStartedAt, formatElapsedMs, getPhaseElapsedMs,
   getGraftProgressCurrent,
+  getGraftsPerHour,
   getAggregateExtractionStatsFromActivities, getExtractionCountsByLabel, getGraftTypeLabelsForReport,
   formatElapsedForReport,
   getTechnicianStatsFromActivities, getGraftCountsByTechnician,
@@ -32,7 +33,7 @@ import PatientModal from '../../components/PatientModal';
 import EditTechniciansModal from '../../components/EditTechniciansModal';
 import EditDoctorModal from '../../components/EditDoctorModal';
 import { colors } from '../../theme/tokens';
-import S from '../../strings';
+import S, { format } from '../../strings';
 import html2pdf from 'html2pdf.js';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 import { SURGERY_DETAIL_POLL_INTERVAL_MS } from '../../constants/polling';
@@ -651,11 +652,28 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
                 {extractionNotStarted ? S.startTimer : extractionCompleted ? S.resumeTimer : S.stopTimer}
               </Button>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: extractionStarted ? 1 : 2 }}>
-              <Typography variant="h4" fontWeight={700} color="text.primary">
-                {formatElapsedMs(extractionElapsed)}
-              </Typography>
-              {extractionCompleted && <CheckCircleIcon color="primary" sx={{ fontSize: 28 }} />}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: extractionStarted ? 1 : 2, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Typography variant="h4" fontWeight={700} color="text.primary" sx={{ lineHeight: 1.2 }}>
+                  {formatElapsedMs(extractionElapsed)}
+                </Typography>
+                {extractionCompleted && <CheckCircleIcon color="primary" sx={{ fontSize: 28 }} />}
+              </Box>
+              {extractionStarted ? (
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  color="text.secondary"
+                  sx={{
+                    flexShrink: 0,
+                    lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatGraftsPerHourCompactPhrase(getGraftsPerHour(totalExtracted, extractionElapsed)) ?? '—'}
+                </Typography>
+              ) : null}
             </Box>
             {extractionStarted && (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -686,11 +704,28 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
                 {placementNotStarted ? S.startTimer : placementCompleted ? S.resumeTimer : S.stopTimer}
               </Button>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: placementStarted ? 1 : 2 }}>
-              <Typography variant="h4" fontWeight={700} color="text.primary">
-                {formatElapsedMs(placementElapsed)}
-              </Typography>
-              {placementCompleted && <CheckCircleIcon color="primary" sx={{ fontSize: 28 }} />}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: placementStarted ? 1 : 2, minWidth: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Typography variant="h4" fontWeight={700} color="text.primary" sx={{ lineHeight: 1.2 }}>
+                  {formatElapsedMs(placementElapsed)}
+                </Typography>
+                {placementCompleted && <CheckCircleIcon color="primary" sx={{ fontSize: 28 }} />}
+              </Box>
+              {placementStarted ? (
+                <Typography
+                  variant="h4"
+                  fontWeight={700}
+                  color="text.secondary"
+                  sx={{
+                    flexShrink: 0,
+                    lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatGraftsPerHourCompactPhrase(getGraftsPerHour(totalExtracted, placementElapsed)) ?? '—'}
+                </Typography>
+              ) : null}
             </Box>
             {placementStarted && (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -802,6 +837,19 @@ function ReportRow({ label, value, valueLoading }) {
   );
 }
 
+
+/** In-progress extraction/placement hero: ##.# GPH beside timer */
+function formatGraftsPerHourCompactPhrase(rate) {
+  if (rate == null || !Number.isFinite(rate)) return null;
+  return format(S.graftsPerHourCompact, { n: rate.toFixed(1) });
+}
+
+/** Completed timing card GPH row: one decimal (label carries GPH; avoids "GPH: 62.8 GPH"). */
+function formatGraftsPerHourReportValue(rate) {
+  if (rate == null || !Number.isFinite(rate)) return null;
+  return rate.toFixed(1);
+}
+
 function DoneState({ surgery, surgeryId, company, technicians, options, onReport, onExportPdfReady }) {
   const reportRef = useRef(null);
   const [exporting, setExporting] = useState(false);
@@ -817,6 +865,14 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
   const sxTotalMs = getSurgeryTotalMs(surgery);
   const extractionTotalMs = getPhaseElapsedMs(surgery?.extraction) || null;
   const placementTotalMs = getPhaseElapsedMs(surgery?.placement) || null;
+  const extractionMsForRate = getPhaseElapsedMs(surgery?.extraction);
+  const placementMsForRate = getPhaseElapsedMs(surgery?.placement);
+  const completedExtractionGrafts = Math.max(
+    getGraftProgressCurrent(surgery),
+    activityReportStats.graftCount ?? 0,
+  );
+  const doneExtractionGraftsPerHour = getGraftsPerHour(completedExtractionGrafts, extractionMsForRate);
+  const donePlacementGraftsPerHour = getGraftsPerHour(completedExtractionGrafts, placementMsForRate);
 
   const { byTech, graftTypes, techIds } = getGraftCountsByTechnician(activities, graftButtons);
   const graftRowLabels = getGraftTypeLabelsForReport(graftTypes, entries, extractionCountByLabel);
@@ -1040,7 +1096,8 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           </Typography>
           <ReportRow label="Start" value={formatReportTime(surgery?.extraction?.startedAt)} />
           <ReportRow label="Finish" value={formatReportTime(surgery?.extraction?.completedAt)} />
-          <ReportRow label="Total Time" value={formatElapsedForReport(extractionTotalMs)} />
+          <ReportRow label={S.totalTime} value={formatElapsedForReport(extractionTotalMs)} />
+          <ReportRow label={S.graftsPerHourReportLabel} value={formatGraftsPerHourReportValue(doneExtractionGraftsPerHour)} />
         </Paper>
         <Paper sx={{ flex: 1, minWidth: 200, p: 4 }}>
           <Typography variant="subtitle1" fontWeight={600} color="primary.main" sx={{ borderBottom: 2, borderColor: 'primary.main', pb: 0.5, mb: 2 }}>
@@ -1048,7 +1105,8 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           </Typography>
           <ReportRow label="Start" value={formatReportTime(surgery?.placement?.startedAt)} />
           <ReportRow label="Finish" value={formatReportTime(surgery?.placement?.completedAt)} />
-          <ReportRow label="Total Time" value={formatElapsedForReport(placementTotalMs)} />
+          <ReportRow label={S.totalTime} value={formatElapsedForReport(placementTotalMs)} />
+          <ReportRow label={S.graftsPerHourReportLabel} value={formatGraftsPerHourReportValue(donePlacementGraftsPerHour)} />
         </Paper>
       </Box>
 

@@ -194,6 +194,8 @@ const strings = {
   singleGrafts: 'SINGLE GRAFTS',
   transRateHair: 'Trans. Rate (Hair)',
   transRateGrafts: 'Trans. Rate (Grafts)',
+  graftsPerHourCompact: '{n} GPH',
+  graftsPerHourReportLabel: 'GPH',
   hairCount: 'Hair Count',
   potHair: 'Pot Hair',
   reportGeneratedOn: 'Report generated on',

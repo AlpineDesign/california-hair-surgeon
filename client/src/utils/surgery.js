@@ -109,6 +109,18 @@ export function getPhaseElapsedMs(phase) {
   return Date.now() - new Date(phase.startedAt).getTime();
 }
 
+/** Phase duration must be at least this for GPH; shorter spans match "00 H : 00 M" in reports and blow up the rate. */
+const MIN_ELAPSED_MS_FOR_GPH = 60_000;
+
+/** Grafts per elapsed clock hour: graftCount / (elapsedMs / 3_600_000). Null if time or count is unusable. */
+export function getGraftsPerHour(graftCount, elapsedMs) {
+  const n = Number(graftCount);
+  const ms = Number(elapsedMs);
+  if (!Number.isFinite(ms) || ms < MIN_ELAPSED_MS_FOR_GPH) return null;
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n / (ms / 3600000);
+}
+
 export function formatElapsedForReport(ms) {
   if (ms == null || ms < 0) return null;
   const hrs = Math.floor(ms / 3600000);
