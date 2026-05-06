@@ -79,12 +79,12 @@ export function formatStartedAt(dateStr) {
   return `${time} | ${date}`;
 }
 
+/** Elapsed duration for live timers: `hours:minutes`, minutes zero-padded (e.g. `2:05`, `429:23`). */
 export function formatElapsedMs(ms) {
   if (ms == null || ms < 0) return '—';
   const hrs = Math.floor(ms / 3600000);
   const min = Math.floor((ms % 3600000) / 60000);
-  if (hrs > 0) return `${hrs}hrs ${min}min`;
-  return `${min}min`;
+  return `${hrs}:${String(min).padStart(2, '0')}`;
 }
 
 /**

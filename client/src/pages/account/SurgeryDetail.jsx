@@ -540,9 +540,14 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
                 <Typography variant="subtitle1" fontWeight={600} color="text.primary">Surgery</Typography>
                 <StatusBadge status="active" />
               </Box>
-              <Typography variant="h3" fontWeight={700} color="text.primary" sx={{ mb: 1, lineHeight: 1.2 }}>
-                {formatElapsedMs(totalElapsed)}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5, flexWrap: 'wrap', mb: 1 }}>
+                <Typography component="span" variant="h3" fontWeight={700} color="text.primary" sx={{ lineHeight: 1.2 }}>
+                  {activityReportStats.graftCount ?? 0}
+                </Typography>
+                <Typography component="span" variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  {S.totalGrafts}
+                </Typography>
+              </Box>
               <Typography variant="body2" color="text.secondary">
                 <Box component="span" fontWeight={600}>Started:</Box> {formatStartedAt(surgery?.startedAt)}
               </Typography>
@@ -698,8 +703,12 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
         {/* Extraction highlights - separate cards below Extraction & Placement */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 2, mt: 3, width: '100%' }}>
           <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.main', color: 'primary.contrastText' }}>
-            <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{activityReportStats.graftCount ?? 0}</Typography>
-            <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>{S.totalGrafts}</Typography>
+            <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>
+              {formatElapsedMs(totalElapsed)}
+            </Typography>
+            <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>
+              {S.totalSxTime}
+            </Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.potHair ?? 0}</Typography>
