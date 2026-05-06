@@ -410,7 +410,7 @@ export default function CountingInterface() {
 
   if (loading || !surgery) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100dvh' }}>
         <CircularProgress size={40} />
       </Box>
     );
@@ -419,7 +419,15 @@ export default function CountingInterface() {
   const patientLabel = `${surgery?.patient?.initials || '—'} ${surgery?.startedAt ? formatStartedAt(surgery.startedAt).split(' | ')[1] || '' : ''}`.trim();
 
   return (
-    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <Box
+      sx={{
+        height: '100dvh',
+        maxHeight: '100dvh',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
       {/* Header — same spacing as surgical dashboard */}
       <Box
         sx={{
@@ -487,14 +495,11 @@ export default function CountingInterface() {
             minWidth: 0,
             minHeight: 0,
             p: { xs: 1.5, sm: 2, md: 4 },
-            overflowY: 'auto',
-            overflowX: 'hidden',
+            overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'stretch',
             justifyContent: 'flex-start',
-            containerType: 'inline-size',
-            containerName: 'tech-graft-panel',
           }}
         >
           {surgeryPendingStart && (
@@ -510,24 +515,24 @@ export default function CountingInterface() {
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: { xs: 1.5, sm: 2 },
+                gap: { xs: 1, sm: 1.25, md: 1.5 },
                 width: '100%',
                 maxWidth: '100%',
                 flex: 1,
-                justifyContent: 'flex-start',
-                // 4 rows of square cells (aspect 1) in 4 cols ≈ panel width + row gaps; ensures room for 4 denominator rows
-                minHeight: 'max(calc(100cqw + 48px), 320px)',
+                minHeight: 0,
               }}
             >
               {buttonRows.map((row, ri) => (
                 <Box
                   key={ri}
                   sx={{
+                    flex: 1,
+                    minHeight: 0,
                     display: 'grid',
                     gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                    gridTemplateRows: 'minmax(0, 1fr)',
                     gap: { xs: 1, sm: 1.5, md: 2 },
                     width: '100%',
-                    maxWidth: '100%',
                   }}
                 >
                   {row.map((btn, bi) => (
@@ -543,14 +548,15 @@ export default function CountingInterface() {
                       sx={{
                         minWidth: 0,
                         width: '100%',
-                        maxWidth: '100%',
-                        aspectRatio: '1',
-                        height: 'auto',
+                        height: '100%',
                         minHeight: 0,
-                        p: { xs: 0.5, sm: 1 },
-                        fontSize: 'clamp(1.1rem, 4.2vmin, 3.2rem)',
+                        alignSelf: 'stretch',
+                        justifySelf: 'stretch',
+                        p: { xs: 0.5, sm: 0.75 },
+                        fontSize: 'clamp(0.85rem, 4vmin, 3rem)',
                         fontWeight: 700,
                         borderRadius: 2,
+                        lineHeight: 1.1,
                         transition: 'opacity 0.07s ease, transform 0.07s ease',
                         willChange: 'opacity, transform',
                         '&:active': {
