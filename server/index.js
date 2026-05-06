@@ -8,10 +8,36 @@ const app = express();
 app.set('trust proxy', 1);
 
 const clientOrigin = String(config.clientUrl || '').replace(/\/$/, '');
-app.use(cors({
-  origin: clientOrigin,
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Scope-Account-Id'],
-}));
+const corsAllowedHeaders = ['Content-Type', 'Authorization', 'X-Scope-Account-Id'];
+
+if (config.isDocumentDb) {
+  // AWS / production: unchanged from before — single allowed browser origin.
+  app.use(
+    cors({
+      origin: clientOrigin,
+      allowedHeaders: corsAllowedHeaders,
+    }),
+  );
+} else {
+  // Local Atlas testing: allow localhost / 127.0.0.1 on any port (e.g. CRA on 3001).
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (
+          !origin ||
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
+        ) {
+          return callback(null, true);
+        }
+        if (origin === clientOrigin) {
+          return callback(null, true);
+        }
+        callback(null, false);
+      },
+      allowedHeaders: corsAllowedHeaders,
+    }),
+  );
+}
 // Logo upload POSTs base64 JSON; default 100kb is too small (see /api/accounts/logo).
 app.use(express.json({ limit: '8mb' }));
 
