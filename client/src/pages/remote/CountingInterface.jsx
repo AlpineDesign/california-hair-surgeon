@@ -1,20 +1,32 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+  memo,
+  useMemo,
+} from 'react';
 import {
   Box, Button, Typography, Paper, IconButton, Chip, Alert,
   Dialog, DialogTitle, DialogContent, DialogActions,
   Divider,
-  List, ListItem, ListItemText, ListItemSecondaryAction,
+  List, ListItem, ListItemText,
   CircularProgress,
+  TextField,
+  Popover,
 } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import CloseIcon from '@mui/icons-material/Close';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import { useAuth } from '../../hooks/useAuth';
 import { getSurgery, getActivities, createActivity, updateActivity, deleteActivity, updateSurgery } from '../../api/surgeries';
 import {
   getTechnicianStatsFromActivities,
-  getTechnicianDisplayName,
+  getTechnicianStatsRowForUser,
   formatStartedAt,
   mergeSurgeryPatch,
   groupGraftButtonsByDenominatorRows,
@@ -28,6 +40,9 @@ import BulkQuantityKeypad, { BULK_QUANTITY_MAX } from '../../components/BulkQuan
 import S, { format } from '../../strings';
 
 const LONG_PRESS_MS = 500;
+/** Tech activity list: newest-first; load in chunks to limit DOM / reconciliation. */
+const TECH_ACTIVITY_VISIBLE_PAGE = 100;
+const EMPTY_GRAFT_LIST = [];
 /** Only while waiting for the doctor to start — same visibility rules as usePollWhileVisible. */
 const POLL_MS_PENDING_START = 4000;
 
@@ -67,6 +82,220 @@ const ACTIVITY_OPTIMISTIC_OPACITY = 0.48;
 /** Smooth fade when a row leaves optimistic state (and for any opacity change). */
 const ACTIVITY_OPACITY_TRANSITION = 'opacity 0.25s ease-in-out';
 
+/**
+ * Digit-only bulk quick field: empty / 0 → single graft tap; 1–max → bulk count; above max signals error.
+ */
+function classifyTechBulkQuickField(digits) {
+  const s = String(digits ?? '').trim();
+  if (s === '') return { mode: 'single' };
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n < 1) return { mode: 'single' };
+  if (n > BULK_QUANTITY_MAX) return { mode: 'tooBig' };
+  return { mode: 'bulk', count: n };
+}
+
+const TECH_BULK_QUICK_INPUT_MAX_LEN = String(BULK_QUANTITY_MAX).length + 1;
+
+/** Graft grid isolates heavy layout from Summary/Activity re-renders; stable pointer props. */
+const GraftingButtonGrid = memo(function GraftingButtonGrid({
+  buttonRows,
+  disabled,
+  onPointerDown,
+  onPointerUp,
+  onPointerLeave,
+}) {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: { xs: 1, sm: 1.25, md: 1.5 },
+        width: '100%',
+        maxWidth: '100%',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
+      {buttonRows.map((row, ri) => (
+        <Box
+          key={ri}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+            gridTemplateRows: 'minmax(0, 1fr)',
+            gap: { xs: 1, sm: 1.5, md: 2 },
+            width: '100%',
+          }}
+        >
+          {row.map((btn, bi) => {
+            const gk = graftButtonKey(btn, ri, bi);
+            return (
+              <Button
+                key={gk}
+                variant="contained"
+                color="primary"
+                disabled={disabled}
+                data-graft-key={gk}
+                onPointerDown={onPointerDown}
+                onPointerUp={onPointerUp}
+                onPointerLeave={onPointerLeave}
+                onPointerCancel={onPointerLeave}
+                sx={{
+                  touchAction: 'manipulation',
+                  WebkitTapHighlightColor: 'transparent',
+                  minWidth: 0,
+                  width: '100%',
+                  height: '100%',
+                  minHeight: 0,
+                  alignSelf: 'stretch',
+                  justifySelf: 'stretch',
+                  p: { xs: 0.5, sm: 0.75 },
+                  fontSize: 'clamp(0.85rem, 4vmin, 3rem)',
+                  fontWeight: 700,
+                  borderRadius: 2,
+                  lineHeight: 1.1,
+                  transition: 'opacity 0.05s ease, transform 0.05s ease',
+                  willChange: 'opacity, transform',
+                  '&:active': {
+                    opacity: 0.82,
+                    transform: 'scale(0.97)',
+                  },
+                }}
+              >
+                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'baseline' }}>
+                  {btn.label.split('/').map((part, i) => (
+                    <Box key={i} component="span">
+                      {i > 0 && <Box component="span" sx={{ opacity: 0.5 }}>/</Box>}
+                      {part}
+                    </Box>
+                  ))}
+                </Box>
+              </Button>
+            );
+          })}
+        </Box>
+      ))}
+    </Box>
+  );
+});
+
+/**
+ * Local state only — typing does not re-render CountingInterface (graft grid + activity list).
+ * Parent reads/clears via ref on graft button pointer-up.
+ */
+const TechBulkQuickCard = memo(
+  forwardRef(function TechBulkQuickCard({ disabled }, ref) {
+    const [digits, setDigits] = useState('');
+    const [error, setError] = useState('');
+    const [helpAnchor, setHelpAnchor] = useState(null);
+    const digitsRef = useRef('');
+    digitsRef.current = digits;
+
+    useImperativeHandle(ref, () => ({
+      consumeForGraftTap() {
+        const q = classifyTechBulkQuickField(digitsRef.current);
+        setDigits('');
+        if (q.mode === 'tooBig') {
+          setError(format(S.bulkAddMaxCount, { max: BULK_QUANTITY_MAX }));
+        } else {
+          setError('');
+        }
+        return q;
+      },
+    }), []);
+
+    const onDigitsChange = (e) => {
+      const next = e.target.value.replace(/\D/g, '').slice(0, TECH_BULK_QUICK_INPUT_MAX_LEN);
+      setDigits(next);
+      if (error) setError('');
+    };
+
+    return (
+      <Paper sx={{ p: 0, flexShrink: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ position: 'relative', width: '100%' }}>
+          <IconButton
+            size="small"
+            aria-label={S.techBulkQuickHelpAria}
+            onClick={(e) =>
+              setHelpAnchor(helpAnchor ? null : e.currentTarget)
+            }
+            sx={{
+              position: 'absolute',
+              top: (theme) => theme.spacing(0.25),
+              right: (theme) => theme.spacing(0.25),
+              zIndex: 1,
+            }}
+          >
+            <HelpOutlineIcon fontSize="small" />
+          </IconButton>
+          <Popover
+            open={Boolean(helpAnchor)}
+            anchorEl={helpAnchor}
+            onClose={() => setHelpAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            slotProps={{
+              paper: {
+                sx: { maxWidth: 300, px: 0.5, py: 0.5 },
+              },
+            }}
+          >
+            <Typography variant="body2" sx={{ p: 1.75 }}>
+              {S.techBulkQuickHint}
+            </Typography>
+          </Popover>
+          <TextField
+            fullWidth
+            size="medium"
+            variant="outlined"
+            placeholder={S.techBulkQuickPlaceholder}
+            value={digits}
+            disabled={disabled}
+            onChange={onDigitsChange}
+            sx={{
+              m: 0,
+              '& .MuiOutlinedInput-root': {
+                minHeight: (theme) => theme.spacing(8),
+                pl: 0,
+                paddingRight: (theme) => theme.spacing(4.25),
+                bgcolor: 'background.paper',
+                borderRadius: 0,
+                '& fieldset': { border: 'none' },
+                '&:hover fieldset': { border: 'none' },
+                '&.Mui-focused fieldset': { border: 'none' },
+                '&.Mui-disabled': {
+                  bgcolor: 'action.hover',
+                },
+              },
+              '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { border: 'none' },
+              '& .MuiInputBase-input': {
+                textAlign: 'center',
+                fontSize: '1.125rem',
+                fontWeight: 600,
+                py: 1,
+              },
+            }}
+            inputProps={{
+              inputMode: 'numeric',
+              pattern: '[0-9]*',
+              'aria-invalid': !!error,
+            }}
+          />
+        </Box>
+        {error ? (
+          <Alert severity="error" sx={{ py: 0.5, px: 1, borderRadius: 0 }} icon={false}>
+            {error}
+          </Alert>
+        ) : null}
+      </Paper>
+    );
+  })
+);
+
 export default function CountingInterface() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -82,8 +311,14 @@ export default function CountingInterface() {
   const [activityEditCountStr, setActivityEditCountStr] = useState('');
   const [activityEditError, setActivityEditError] = useState('');
   const [activityUpdating, setActivityUpdating] = useState(false);
+  const [activityVisibleCount, setActivityVisibleCount] = useState(TECH_ACTIVITY_VISIBLE_PAGE);
+  const techBulkQuickRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressConsumedRef = useRef(false);
+  const surgeryPendingStartRef = useRef(false);
+  const extractionCompletedRef = useRef(false);
+  const handleButtonClickRef = useRef(() => {});
+  const handleBulkSaveRef = useRef(async () => {});
 
   const fetchSurgery = useCallback(async () => {
     if (!id) return;
@@ -130,6 +365,10 @@ export default function CountingInterface() {
   useEffect(() => { fetchSurgery(); }, [fetchSurgery]);
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
+  useEffect(() => {
+    setActivityVisibleCount(TECH_ACTIVITY_VISIBLE_PAGE);
+  }, [id]);
+
   const surgeryPendingStart =
     surgery != null &&
     surgery.status !== 'active' &&
@@ -174,17 +413,62 @@ export default function CountingInterface() {
     setActivityEditError('');
   }, [activityModal]);
 
-  const graftButtons = surgery?.graftButtons ?? [];
+  const graftButtons = surgery?.graftButtons ?? EMPTY_GRAFT_LIST;
   const myUserId = user?.id || user?.objectId;
-  const techConfig = (surgery?.technicianButtonConfigs || []).find(
-    (c) => toUserId(c.userId) === myUserId
+  const techConfig = useMemo(
+    () => (surgery?.technicianButtonConfigs || []).find((c) => toUserId(c.userId) === myUserId),
+    [surgery?.technicianButtonConfigs, myUserId]
   );
-  const activeButtons = getActiveButtons(graftButtons, techConfig);
-  const buttonRows = groupGraftButtonsByDenominatorRows(activeButtons);
-  const graftButtonsSorted = sortGraftButtonsByGraftType(graftButtons);
-  const technicianStats = getTechnicianStatsFromActivities(activities);
-  const myStats = technicianStats.get(user?.id || user?.objectId) || {};
+  const activeButtons = useMemo(
+    () => getActiveButtons(graftButtons, techConfig),
+    [graftButtons, techConfig]
+  );
+  const buttonRows = useMemo(
+    () => groupGraftButtonsByDenominatorRows(activeButtons),
+    [activeButtons]
+  );
+  const graftButtonMap = useMemo(() => {
+    const m = new Map();
+    buttonRows.forEach((row, ri) => {
+      row.forEach((btn, bi) => {
+        m.set(graftButtonKey(btn, ri, bi), btn);
+      });
+    });
+    return m;
+  }, [buttonRows]);
+  const graftButtonsSorted = useMemo(
+    () => sortGraftButtonsByGraftType(graftButtons),
+    [graftButtons]
+  );
+  const technicianStats = useMemo(
+    () => getTechnicianStatsFromActivities(activities),
+    [activities]
+  );
+  const myStats = useMemo(
+    () => getTechnicianStatsRowForUser(technicianStats, user),
+    [technicianStats, user]
+  );
   const extractionCompleted = !!surgery?.extraction?.completedAt;
+  const myActivities = useMemo(
+    () =>
+      activities.filter((a) => {
+        if (a.action !== 'extraction') return false;
+        const aid =
+          a.userId?.id ??
+          a.userId?.objectId ??
+          (typeof a.userId === 'string' ? a.userId : null) ??
+          a.user?.id;
+        return aid === myUserId;
+      }),
+    [activities, myUserId]
+  );
+
+  const visibleMyActivities = useMemo(
+    () => myActivities.slice(0, Math.min(activityVisibleCount, myActivities.length)),
+    [myActivities, activityVisibleCount]
+  );
+
+  const activityListHasMore = activityVisibleCount < myActivities.length;
 
   const handleBack = () => navigate('/remote/surgeries');
 
@@ -320,40 +604,6 @@ export default function CountingInterface() {
     setSurgery((prev) => mergeSurgeryPatch(prev, updated));
   };
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current != null) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const handleGraftPointerDown = (btn) => () => {
-    if (surgeryPendingStart || extractionCompleted) return;
-    longPressConsumedRef.current = false;
-    clearLongPressTimer();
-    longPressTimerRef.current = window.setTimeout(() => {
-      longPressTimerRef.current = null;
-      longPressConsumedRef.current = true;
-      triggerLightHaptic();
-      setBulkModalInitialLabel(btn.label);
-      setBulkModalOpen(true);
-    }, LONG_PRESS_MS);
-  };
-
-  const handleGraftPointerUp = (btn) => () => {
-    clearLongPressTimer();
-    if (surgeryPendingStart || extractionCompleted) return;
-    if (longPressConsumedRef.current) {
-      longPressConsumedRef.current = false;
-      return;
-    }
-    handleButtonClick(btn);
-  };
-
-  const handleGraftPointerLeave = () => {
-    clearLongPressTimer();
-  };
-
   const handleBulkSave = async (count, btn) => {
     if (!id || surgeryPendingStart || extractionCompleted) {
       throw new Error('skip');
@@ -419,11 +669,64 @@ export default function CountingInterface() {
     }
   };
 
-  const myActivities = activities.filter((a) => {
-    if (a.action !== 'extraction') return false;
-    const aid = a.userId?.id ?? a.userId?.objectId ?? (typeof a.userId === 'string' ? a.userId : null) ?? a.user?.id;
-    return aid === myUserId;
-  });
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current != null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  surgeryPendingStartRef.current = surgeryPendingStart;
+  extractionCompletedRef.current = extractionCompleted;
+  handleButtonClickRef.current = handleButtonClick;
+  handleBulkSaveRef.current = handleBulkSave;
+
+  const handleGridPointerDown = useCallback(
+    (e) => {
+      const key = e.currentTarget.getAttribute('data-graft-key');
+      if (!key) return;
+      const btn = graftButtonMap.get(key);
+      if (!btn) return;
+      if (surgeryPendingStartRef.current || extractionCompletedRef.current) return;
+      longPressConsumedRef.current = false;
+      clearLongPressTimer();
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null;
+        longPressConsumedRef.current = true;
+        triggerLightHaptic();
+        setBulkModalInitialLabel(btn.label);
+        setBulkModalOpen(true);
+      }, LONG_PRESS_MS);
+    },
+    [graftButtonMap]
+  );
+
+  const handleGridPointerUp = useCallback(
+    (e) => {
+      clearLongPressTimer();
+      const key = e.currentTarget.getAttribute('data-graft-key');
+      if (!key) return;
+      const btn = graftButtonMap.get(key);
+      if (!btn) return;
+      if (surgeryPendingStartRef.current || extractionCompletedRef.current) return;
+      if (longPressConsumedRef.current) {
+        longPressConsumedRef.current = false;
+        return;
+      }
+      const q = techBulkQuickRef.current?.consumeForGraftTap?.() ?? { mode: 'single' };
+      if (q.mode === 'tooBig') return;
+      if (q.mode === 'bulk') {
+        void handleBulkSaveRef.current(q.count, btn);
+        return;
+      }
+      void handleButtonClickRef.current(btn);
+    },
+    [graftButtonMap]
+  );
+
+  const handleGridPointerLeave = useCallback(() => {
+    clearLongPressTimer();
+  }, []);
 
   if (loading || !surgery) {
     return (
@@ -528,73 +831,13 @@ export default function CountingInterface() {
           {activeButtons.length === 0 ? (
             <Typography color="text.secondary">{S.techEditButtonsConfigureHint}</Typography>
           ) : (
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: { xs: 1, sm: 1.25, md: 1.5 },
-                width: '100%',
-                maxWidth: '100%',
-                flex: 1,
-                minHeight: 0,
-              }}
-            >
-              {buttonRows.map((row, ri) => (
-                <Box
-                  key={ri}
-                  sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                    gridTemplateRows: 'minmax(0, 1fr)',
-                    gap: { xs: 1, sm: 1.5, md: 2 },
-                    width: '100%',
-                  }}
-                >
-                  {row.map((btn, bi) => (
-                    <Button
-                      key={graftButtonKey(btn, ri, bi)}
-                      variant="contained"
-                      color="primary"
-                      disabled={surgeryPendingStart || extractionCompleted}
-                      onPointerDown={handleGraftPointerDown(btn)}
-                      onPointerUp={handleGraftPointerUp(btn)}
-                      onPointerLeave={handleGraftPointerLeave}
-                      onPointerCancel={handleGraftPointerLeave}
-                      sx={{
-                        minWidth: 0,
-                        width: '100%',
-                        height: '100%',
-                        minHeight: 0,
-                        alignSelf: 'stretch',
-                        justifySelf: 'stretch',
-                        p: { xs: 0.5, sm: 0.75 },
-                        fontSize: 'clamp(0.85rem, 4vmin, 3rem)',
-                        fontWeight: 700,
-                        borderRadius: 2,
-                        lineHeight: 1.1,
-                        transition: 'opacity 0.07s ease, transform 0.07s ease',
-                        willChange: 'opacity, transform',
-                        '&:active': {
-                          opacity: 0.82,
-                          transform: 'scale(0.97)',
-                        },
-                      }}
-                    >
-                      <Box component="span" sx={{ display: 'inline-flex', alignItems: 'baseline' }}>
-                        {btn.label.split('/').map((part, i) => (
-                          <Box key={i} component="span">
-                            {i > 0 && <Box component="span" sx={{ opacity: 0.5 }}>/</Box>}
-                            {part}
-                          </Box>
-                        ))}
-                      </Box>
-                    </Button>
-                  ))}
-                </Box>
-              ))}
-            </Box>
+            <GraftingButtonGrid
+              buttonRows={buttonRows}
+              disabled={surgeryPendingStart || extractionCompleted}
+              onPointerDown={handleGridPointerDown}
+              onPointerUp={handleGridPointerUp}
+              onPointerLeave={handleGridPointerLeave}
+            />
           )}
         </Box>
 
@@ -606,39 +849,48 @@ export default function CountingInterface() {
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            gap: 2,
-            p: 2,
+            gap: 1,
+            pt: 1,
+            px: 2,
+            pb: 2,
             bgcolor: 'background.default',
             maxHeight: { xs: '42vh', md: 'none' },
             overflowY: 'auto',
             overflowX: 'hidden',
           }}
         >
-          <Paper sx={{ p: 2, flexShrink: 0 }}>
-            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ mb: 1.5 }}>
-              {S.techDashSummary}
-            </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{S.graftCount}</Typography>
+          <Paper sx={{ px: 2, py: 1.5, flexShrink: 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {S.graftCount}
+                </Typography>
                 <Typography variant="body2" fontWeight={700}>{myStats.graftCount ?? 0}</Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{S.hairCount}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {S.hairCount}
+                </Typography>
                 <Typography variant="body2" fontWeight={700}>{myStats.hairCount ?? 0}</Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{S.potHair}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {S.potHair}
+                </Typography>
                 <Typography variant="body2" fontWeight={700}>{myStats.potHair ?? 0}</Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{S.transRateHair}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {S.transRateHair}
+                </Typography>
                 <Typography variant="body2" fontWeight={700}>
                   {myStats.transRateHair != null ? `${myStats.transRateHair.toFixed(2)}` : '0'}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{S.transRateGrafts}</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+                  {S.transRateGrafts}
+                </Typography>
                 <Typography variant="body2" fontWeight={700}>
                   {myStats.transRateGrafts != null ? `${myStats.transRateGrafts.toFixed(2)}` : '0'}
                 </Typography>
@@ -646,10 +898,12 @@ export default function CountingInterface() {
             </Box>
           </Paper>
 
-          <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ px: 2, pt: 2, pb: 1 }}>
-              {S.techDashActivity}
-            </Typography>
+          <TechBulkQuickCard
+            ref={techBulkQuickRef}
+            disabled={surgeryPendingStart || extractionCompleted}
+          />
+
+          <Paper sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0, pt: 1.5, pb: 0, px: 0 }}>
             <List
               dense
               sx={{
@@ -673,129 +927,168 @@ export default function CountingInterface() {
                   <ListItemText primary={S.noActivity} secondary={S.noActivitySecondary} />
                 </ListItem>
               ) : (
-                myActivities.map((a) => (
-                  <ListItem
-                    key={a._clientKey ?? a.id ?? a.objectId ?? `${a.payload?.label}-${a.createdAt}`}
-                    dense
-                    onClick={() =>
-                      a.action === 'extraction' &&
-                      !surgeryPendingStart &&
-                      !extractionCompleted &&
-                      !a._optimistic &&
-                      setActivityModal(a)}
-                    sx={{
-                      cursor:
+                <>
+                  {visibleMyActivities.map((a) => (
+                    <ListItem
+                      key={a._clientKey ?? a.id ?? a.objectId ?? `${a.payload?.label}-${a.createdAt}`}
+                      dense
+                      onClick={() =>
                         a.action === 'extraction' &&
                         !surgeryPendingStart &&
                         !extractionCompleted &&
-                        !a._optimistic
-                          ? 'pointer'
-                          : 'default',
-                      py: 0.5,
-                      px: 0,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      '&:last-child': { borderBottom: 'none' },
-                      transition: ACTIVITY_OPACITY_TRANSITION,
-                      ...(a._optimistic
-                        ? {
-                            animation: 'activityRowSlideIn 0.22s ease-out forwards',
-                          }
-                        : {
-                            animation: 'none',
-                            opacity: 1,
-                          }),
-                      '&:hover':
-                        a.action === 'extraction' &&
-                        !surgeryPendingStart &&
-                        !extractionCompleted &&
-                        !a._optimistic
-                          ? { bgcolor: 'action.hover' }
-                          : {},
-                    }}
-                    secondaryAction={
-                      (() => {
-                        const bulkUnits = getActivityExtractionBulkCount(a.payload);
-                        const showMenu =
-                          !surgeryPendingStart &&
-                          !a._optimistic &&
+                        !a._optimistic &&
+                        setActivityModal(a)}
+                      sx={{
+                        cursor:
                           a.action === 'extraction' &&
-                          !extractionCompleted;
-                        if (bulkUnits <= 1 && !showMenu) return null;
-                        return (
-                          <Box
-                            sx={{ display: 'flex', alignItems: 'center', height: '100%' }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {bulkUnits > 1 && (
-                              <Typography
-                                component="span"
-                                variant="body2"
-                                fontWeight={700}
-                                color="text.secondary"
-                                sx={{
-                                  fontVariantNumeric: 'tabular-nums',
-                                  pr: showMenu ? 0.25 : 0,
-                                  userSelect: 'none',
-                                }}
-                              >
-                                {format(S.activityBulkMultiplier, { count: bulkUnits })}
-                              </Typography>
-                            )}
-                            {showMenu && (
-                              <IconButton
-                                size="small"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActivityModal(a);
-                                }}
-                                aria-label={S.correctGraftType}
-                              >
-                                <MoreVertIcon fontSize="small" />
-                              </IconButton>
-                            )}
-                          </Box>
-                        );
-                      })()
-                    }
-                  >
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.5 }}>
-                          <Box
-                            component="span"
-                            sx={{
-                              px: 0.75,
-                              py: 0.25,
-                              bgcolor: 'grey.200',
-                              border: '1px solid',
-                              borderColor: 'grey.600',
-                              borderRadius: 0.5,
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              color: 'grey.800',
-                              display: 'inline-flex',
-                              alignItems: 'baseline',
-                            }}
-                          >
-                            {(a.payload?.label ?? a.action).split('/').map((part, i) => (
-                              <Box key={i} component="span">
-                                {i > 0 && (
-                                  <Box component="span" sx={{ opacity: 0.5 }}>
-                                    /
-                                  </Box>
-                                )}
-                                {part}
-                              </Box>
-                            ))}
-                          </Box>
-                          {formatTime(a.createdAt)}
-                        </Box>
+                          !surgeryPendingStart &&
+                          !extractionCompleted &&
+                          !a._optimistic
+                            ? 'pointer'
+                            : 'default',
+                        py: 0.5,
+                        px: 0,
+                        borderBottom: '1px solid',
+                        borderColor: 'divider',
+                        '&:last-child': { borderBottom: 'none' },
+                        transition: ACTIVITY_OPACITY_TRANSITION,
+                        ...(a._optimistic
+                          ? {
+                              animation: 'activityRowSlideIn 0.22s ease-out forwards',
+                            }
+                          : {
+                              animation: 'none',
+                              opacity: 1,
+                            }),
+                        '&:hover':
+                          a.action === 'extraction' &&
+                          !surgeryPendingStart &&
+                          !extractionCompleted &&
+                          !a._optimistic
+                            ? { bgcolor: 'action.hover' }
+                            : {},
+                      }}
+                      secondaryAction={
+                        (() => {
+                          const bulkUnits = getActivityExtractionBulkCount(a.payload);
+                          const canShowKebabEventually =
+                            a.action === 'extraction' &&
+                            !surgeryPendingStart &&
+                            !extractionCompleted;
+                          const menuInteractive = canShowKebabEventually && !a._optimistic;
+                          const showSecondary = bulkUnits > 1 || canShowKebabEventually;
+                          if (!showSecondary) return null;
+                          return (
+                            <Box
+                              sx={{ display: 'flex', alignItems: 'center', height: '100%' }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {bulkUnits > 1 && (
+                                <Typography
+                                  component="span"
+                                  variant="body2"
+                                  fontWeight={700}
+                                  color="text.secondary"
+                                  sx={{
+                                    fontVariantNumeric: 'tabular-nums',
+                                    pr: canShowKebabEventually ? 0.25 : 0,
+                                    userSelect: 'none',
+                                  }}
+                                >
+                                  {format(S.activityBulkMultiplier, { count: bulkUnits })}
+                                </Typography>
+                              )}
+                              {canShowKebabEventually ? (
+                                <IconButton
+                                  size="small"
+                                  disabled={!menuInteractive}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActivityModal(a);
+                                  }}
+                                  aria-label={S.correctGraftType}
+                                  aria-busy={a._optimistic ? true : undefined}
+                                >
+                                  <MoreVertIcon fontSize="small" />
+                                </IconButton>
+                              ) : null}
+                            </Box>
+                          );
+                        })()
                       }
-                      primaryTypographyProps={{ variant: 'body2' }}
-                    />
-                  </ListItem>
-                ))
+                    >
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box
+                              component="span"
+                              sx={{
+                                px: 0.75,
+                                py: 0.25,
+                                bgcolor: 'grey.200',
+                                border: '1px solid',
+                                borderColor: 'grey.600',
+                                borderRadius: 0.5,
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                color: 'grey.800',
+                                display: 'inline-flex',
+                                alignItems: 'baseline',
+                              }}
+                            >
+                              {(a.payload?.label ?? a.action).split('/').map((part, i) => (
+                                <Box key={i} component="span">
+                                  {i > 0 && (
+                                    <Box component="span" sx={{ opacity: 0.5 }}>
+                                      /
+                                    </Box>
+                                  )}
+                                  {part}
+                                </Box>
+                              ))}
+                            </Box>
+                            {formatTime(a.createdAt)}
+                          </Box>
+                        }
+                        primaryTypographyProps={{ variant: 'body2' }}
+                      />
+                    </ListItem>
+                  ))}
+                  {activityListHasMore ? (
+                    <ListItem
+                      dense
+                      sx={{
+                        flexDirection: 'column',
+                        alignItems: 'stretch',
+                        py: 1.5,
+                        pt: 2,
+                        px: 0,
+                        gap: 1,
+                        borderBottom: 'none',
+                        display: 'flex',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center' }}>
+                        {format(S.techDashActivityLoadedHint, {
+                          visible: visibleMyActivities.length,
+                          total: myActivities.length,
+                        })}
+                      </Typography>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        fullWidth
+                        onClick={() =>
+                          setActivityVisibleCount((n) => n + TECH_ACTIVITY_VISIBLE_PAGE)
+                        }
+                        sx={{ textTransform: 'none' }}
+                      >
+                        {S.techDashActivityLoadMore}
+                      </Button>
+                    </ListItem>
+                  ) : null}
+                </>
               )}
             </List>
           </Paper>
