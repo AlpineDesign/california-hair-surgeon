@@ -65,8 +65,10 @@ async function start() {
   app.use('/api/patients',  patientRoutes);
   app.use('/api/app-test',  appTestRoutes);
 
-  // Production: serve React build
-  if (config.isDevelopment === false) {
+  // Production: serve React build — same gate as commit 6871eed (`config.isDevelopment === false` there,
+  // when `isDevelopment` still meant `NODE_ENV !== 'production'`). After config tied `isDevelopment` to DocumentDB,
+  // use NODE_ENV explicitly (see `NODE_ENV` in apprunner.yaml / Dockerfile.cloudrun).
+  if (process.env.NODE_ENV === 'production') {
     const buildPath = path.join(__dirname, '../client/build');
     app.use(express.static(buildPath));
     app.get('/{*splat}', (req, res) => res.sendFile(path.join(buildPath, 'index.html')));
