@@ -7,7 +7,7 @@ const path = require('path');
 // useLocalMongo: true = mongod on 127.0.0.1:27017 only (overrides DB choice below).
 
 /** AWS / DocumentDB and production URLs. Set false for local Atlas testing. */
-const isDocumentDb = false;
+const isDocumentDb = true;
 
 const port = process.env.PORT || 8080;
 
