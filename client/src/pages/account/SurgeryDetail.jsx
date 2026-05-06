@@ -35,6 +35,7 @@ import { colors } from '../../theme/tokens';
 import S from '../../strings';
 import html2pdf from 'html2pdf.js';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
+import { SURGERY_DETAIL_POLL_INTERVAL_MS } from '../../constants/polling';
 
 const REPORT_PDF_WIDTH = 794; // A4 width in px at 96dpi
 
@@ -54,8 +55,6 @@ const SURGICAL_FIELDS = [
   { key: 'holdingSolution', label: 'Holding Solution', optionsKey: 'holdingSolutions' },
   { key: 'placingDevice', label: 'Placing Device', optionsKey: 'placingDevices' },
 ];
-
-const POLL_INTERVAL_MS = 12000;
 
 function useSurgeryActivities(surgeryId, refreshTrigger = 0, { poll = true } = {}) {
   const [activities, setActivities] = useState([]);
@@ -85,7 +84,7 @@ function useSurgeryActivities(surgeryId, refreshTrigger = 0, { poll = true } = {
     load();
   }, [surgeryId, load, refreshTrigger]);
 
-  usePollWhileVisible(load, POLL_INTERVAL_MS, poll);
+  usePollWhileVisible(load, SURGERY_DETAIL_POLL_INTERVAL_MS, poll);
 
   return [activities, activitiesLoading];
 }
@@ -1269,7 +1268,7 @@ export default function SurgeryDetail() {
     };
   }, [id]);
 
-  usePollWhileVisible(fetchSurgeryLight, POLL_INTERVAL_MS);
+  usePollWhileVisible(fetchSurgeryLight, SURGERY_DETAIL_POLL_INTERVAL_MS);
 
   useEffect(() => {
     const params = adminCompany?.accountId ? { accountId: adminCompany.accountId } : {};

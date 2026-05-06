@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'react';
 /**
  * Runs `callback` every `intervalMs` only while the browser tab is visible.
  * Pauses when the tab is in the background; on return, runs once immediately then resumes the interval.
+ *
+ * If `callback` is async, waits for each run to finish before starting the next (`setInterval`
+ * alone would stack overlapping requests — slower responses could then overwrite newer UI state).
  */
 export default function usePollWhileVisible(callback, intervalMs, enabled = true) {
   const cb = useRef(callback);
@@ -11,8 +14,15 @@ export default function usePollWhileVisible(callback, intervalMs, enabled = true
   useEffect(() => {
     if (!enabled) return undefined;
     let timer = null;
+    let inFlight = false;
     const tick = () => {
-      cb.current();
+      if (inFlight) return;
+      inFlight = true;
+      Promise.resolve(cb.current())
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false;
+        });
     };
     const arm = () => {
       if (timer) clearInterval(timer);

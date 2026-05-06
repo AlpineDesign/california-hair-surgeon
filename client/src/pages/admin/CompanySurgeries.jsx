@@ -15,8 +15,7 @@ import TableLoader from '../../components/TableLoader';
 import { getGraftProgressCurrent, getGoalPct, formatDate } from '../../utils/surgery';
 import S from '../../strings';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
-
-const POLL_INTERVAL_MS = 12000;
+import { STANDARD_POLL_INTERVAL_MS } from '../../constants/polling';
 const COLUMNS = [S.patient, S.date, S.grafts, S.goal];
 
 export default function CompanySurgeries() {
@@ -46,7 +45,7 @@ export default function CompanySurgeries() {
     fetchSurgeries();
   }, [fetchSurgeries]);
 
-  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
+  usePollWhileVisible(fetchSurgeries, STANDARD_POLL_INTERVAL_MS);
 
   const filtered = surgeries.filter((s) => {
     const name = s.patient?.initials || '';

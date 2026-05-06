@@ -16,8 +16,7 @@ import NewSurgeryModal from './NewSurgeryModal';
 import { getGraftProgressCurrent, getGoalPct, formatDateTime } from '../../utils/surgery';
 import S from '../../strings';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
-
-const POLL_INTERVAL_MS = 12000;
+import { STANDARD_POLL_INTERVAL_MS } from '../../constants/polling';
 
 function getGreeting(firstName) {
   const hour = new Date().getHours();
@@ -169,7 +168,7 @@ export default function Home() {
     fetchSurgeries();
   }, [fetchSurgeries]);
 
-  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
+  usePollWhileVisible(fetchSurgeries, STANDARD_POLL_INTERVAL_MS);
 
   const active = surgeries.filter((s) => s.status === 'active');
   const past = surgeries.filter((s) => s.status === 'completed');

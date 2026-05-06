@@ -15,8 +15,7 @@ import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import { getGraftProgressCurrent, getGoalPct, formatDateTime } from '../../utils/surgery';
 import S from '../../strings';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
-
-const POLL_INTERVAL_MS = 12000;
+import { STANDARD_POLL_INTERVAL_MS } from '../../constants/polling';
 
 function getGreeting(firstName) {
   const hour = new Date().getHours();
@@ -167,7 +166,7 @@ export default function RemoteHome() {
     fetchSurgeries();
   }, [fetchSurgeries]);
 
-  usePollWhileVisible(fetchSurgeries, POLL_INTERVAL_MS);
+  usePollWhileVisible(fetchSurgeries, STANDARD_POLL_INTERVAL_MS);
 
   const basePath = '/remote/surgeries';
   const goToSurgery = (sid) => navigate(`${basePath}/${sid}`);
