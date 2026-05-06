@@ -255,6 +255,16 @@ export function getExtractionEntries(surgery, options = {}) {
   return existingEntries.map((e) => ({ ...e, count: e.count ?? 0 }));
 }
 
+const ACTIVITY_EXTRACTION_BULK_MAX = 500;
+
+/** Graft units for one extraction activity (bulk rows use payload.count). */
+export function getActivityExtractionBulkCount(payload) {
+  if (!payload || payload.count == null) return 1;
+  const n = Number(payload.count);
+  if (!Number.isInteger(n) || n < 1) return 1;
+  return Math.min(n, ACTIVITY_EXTRACTION_BULK_MAX);
+}
+
 /**
  * Aggregate activities by userId to produce per-technician stats.
  * activities: [{ userId, action, payload }]
@@ -270,12 +280,13 @@ export function getTechnicianStatsFromActivities(activities) {
     }
     const rec = byUser.get(uid);
     if (a.action === 'extraction' && a.payload?.label != null) {
+      const units = getActivityExtractionBulkCount(a.payload);
       const th = a.payload.totalHairs ?? 0;
       const ih = a.payload.intactHairs ?? 0;
-      rec.graftCount += 1;
-      rec.totalHairs += th;
-      rec.totalIntact += ih;
-      if (ih < (th || 1)) rec.transectedGrafts += 1;
+      rec.graftCount += units;
+      rec.totalHairs += th * units;
+      rec.totalIntact += ih * units;
+      if (ih < (th || 1)) rec.transectedGrafts += units;
     }
   }
   const result = new Map();
@@ -323,13 +334,14 @@ export function getAggregateExtractionStatsFromActivities(activities) {
   let singleGrafts = 0;
   for (const a of activities || []) {
     if (a.action !== 'extraction' || a.payload?.label == null) continue;
+    const units = getActivityExtractionBulkCount(a.payload);
     const th = a.payload.totalHairs ?? 0;
     const ih = a.payload.intactHairs ?? 0;
-    graftCount += 1;
-    totalHairs += th;
-    totalIntact += ih;
-    if (ih < (th || 1)) transectedGrafts += 1;
-    if (a.payload.label === '1/1') singleGrafts += 1;
+    graftCount += units;
+    totalHairs += th * units;
+    totalIntact += ih * units;
+    if (ih < (th || 1)) transectedGrafts += units;
+    if (a.payload.label === '1/1') singleGrafts += units;
   }
   const transectedHairs = totalHairs - totalIntact;
   return {
@@ -357,7 +369,8 @@ export function getGraftCountsByTechnician(activities, graftButtons = []) {
     labelSet.add(a.payload.label);
     if (!byTech.has(uid)) byTech.set(uid, new Map());
     const m = byTech.get(uid);
-    m.set(a.payload.label, (m.get(a.payload.label) || 0) + 1);
+    const units = getActivityExtractionBulkCount(a.payload);
+    m.set(a.payload.label, (m.get(a.payload.label) || 0) + units);
   }
   // Include every label seen in activities, not only current graftButtons (labels can differ after option changes).
   const buttonOrder = graftButtons.map((b) => b.label).filter(Boolean);
@@ -377,7 +390,8 @@ export function getExtractionCountsByLabel(activities) {
   for (const a of activities || []) {
     if (a.action !== 'extraction' || a.payload?.label == null) continue;
     const lbl = a.payload.label;
-    m.set(lbl, (m.get(lbl) || 0) + 1);
+    const units = getActivityExtractionBulkCount(a.payload);
+    m.set(lbl, (m.get(lbl) || 0) + units);
   }
   return m;
 }

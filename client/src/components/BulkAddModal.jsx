@@ -26,11 +26,13 @@ export default function BulkAddModal({
   const [countStr, setCountStr] = useState('');
   const [selectedLabel, setSelectedLabel] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setCountStr('');
     setError('');
+    setSaving(false);
     const first = buttons[0]?.label ?? '';
     setSelectedLabel(initialLabel && buttons.some((b) => b.label === initialLabel) ? initialLabel : first);
   }, [open, initialLabel, buttons]);
@@ -54,7 +56,7 @@ export default function BulkAddModal({
     setError('');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setError('');
     const n = parseInt(countStr, 10);
     if (Number.isNaN(n) || n < 1) {
@@ -71,11 +73,14 @@ export default function BulkAddModal({
       return;
     }
     try {
-      onSave?.(n, btn);
+      setSaving(true);
+      await Promise.resolve(onSave?.(n, btn));
       onClose?.();
     } catch (e) {
       if (e?.message === 'skip') return;
       setError(S.bulkAddFailed);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -282,7 +287,7 @@ export default function BulkAddModal({
           <Button onClick={handleClose}>
             {S.cancel}
           </Button>
-          <Button variant="contained" onClick={handleSave} disabled={buttons.length === 0}>
+          <Button variant="contained" onClick={handleSave} disabled={buttons.length === 0 || saving}>
             {S.save}
           </Button>
         </Box>

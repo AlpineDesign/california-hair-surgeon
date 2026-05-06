@@ -40,7 +40,8 @@ export const updatePlacement = async (id, payload) => {
   return data;
 };
 
-// Activity Log — one record per button click; technicians see own, doctor sees all
+// Activity Log — technicians see own rows; owner/doctor see all. Extraction payload may include
+// count (bulk add, >1 graft per record); defaults to 1 when omitted.
 export const getActivities = async (surgeryId) => {
   const { data } = await client.get(`/api/surgeries/${surgeryId}/activities`);
   return data;

@@ -8,8 +8,8 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { getActivities, updateActivity, deleteActivity } from '../api/surgeries';
-import { mergeSurgeryPatch } from '../utils/surgery';
-import S from '../strings';
+import { mergeSurgeryPatch, getActivityExtractionBulkCount } from '../utils/surgery';
+import S, { format } from '../strings';
 
 function formatTime(dateStr) {
   if (!dateStr) return '—';
@@ -19,7 +19,10 @@ function formatTime(dateStr) {
 
 function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionCompleted }) {
   const [anchorEl, setAnchorEl] = useState(null);
-  const label = activity.payload?.label ?? '—';
+  const labelRaw = activity.payload?.label ?? '—';
+  const bulkUnits = getActivityExtractionBulkCount(activity.payload);
+  const extractedLabel =
+    bulkUnits > 1 ? format(S.activityLogBulkPrimary, { count: bulkUnits, label: labelRaw }) : labelRaw;
   const canEdit = !extractionCompleted && graftButtons?.length > 0;
   const canDelete = !extractionCompleted;
 
@@ -38,7 +41,7 @@ function ActivityItem({ activity, graftButtons, onEdit, onDelete, extractionComp
       <ListItemText
         primary={
           <Typography variant="body2">
-            {`${S.extraction}: ${label}`}
+            {`${S.extraction}: ${extractedLabel}`}
           </Typography>
         }
         secondary={

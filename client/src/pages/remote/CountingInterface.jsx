@@ -19,11 +19,12 @@ import {
   mergeSurgeryPatch,
   groupGraftButtonsByDenominatorRows,
   sortGraftButtonsByGraftType,
+  getActivityExtractionBulkCount,
 } from '../../utils/surgery';
 import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
 import BulkAddModal from '../../components/BulkAddModal';
-import S from '../../strings';
+import S, { format } from '../../strings';
 
 const LONG_PRESS_MS = 500;
 /** Only while waiting for the doctor to start — same visibility rules as usePollWhileVisible. */
@@ -321,7 +322,7 @@ export default function CountingInterface() {
     clearLongPressTimer();
   };
 
-  const handleBulkSave = (count, btn) => {
+  const handleBulkSave = async (count, btn) => {
     if (!id || surgeryPendingStart || extractionCompleted) {
       throw new Error('skip');
     }
@@ -330,76 +331,60 @@ export default function CountingInterface() {
       label: btn.label,
       intactHairs: btn.intactHairs ?? 0,
       totalHairs: btn.totalHairs ?? 1,
+      count,
     };
-    const baseTime = Date.now();
-    const optimisticActivities = [];
-    for (let i = 0; i < count; i++) {
-      const optimisticId = `optimistic-${baseTime}-${i}-${Math.random().toString(36).slice(2, 9)}`;
-      const nowIso = new Date(baseTime + i).toISOString();
-      optimisticActivities.push({
-        id: optimisticId,
-        objectId: optimisticId,
-        _clientKey: optimisticId,
+    const optimisticId = `optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const nowIso = new Date().toISOString();
+    const optimisticActivity = {
+      id: optimisticId,
+      objectId: optimisticId,
+      _clientKey: optimisticId,
+      action: 'extraction',
+      payload,
+      createdAt: nowIso,
+      userId: myUserId,
+      user: {
+        id: myUserId,
+        firstName: user?.firstName,
+        lastName: user?.lastName,
+        username: user?.username,
+      },
+      _optimistic: true,
+    };
+    setActivities((prev) => [optimisticActivity, ...prev]);
+
+    try {
+      const res = await createActivity(id, {
         action: 'extraction',
         payload,
-        createdAt: nowIso,
-        userId: myUserId,
-        user: {
-          id: myUserId,
-          firstName: user?.firstName,
-          lastName: user?.lastName,
-          username: user?.username,
-        },
-        _optimistic: true,
       });
+      if (res?.surgery) setSurgery((prev) => mergeSurgeryPatch(prev, res.surgery));
+      const serverAct = res?.activity;
+      if (serverAct) {
+        const rid = serverAct.id || serverAct.objectId;
+        const newActivity = {
+          ...serverAct,
+          _clientKey: optimisticId,
+          user: optimisticActivity.user,
+          userId: myUserId,
+          action: 'extraction',
+          _optimistic: false,
+        };
+        setActivities((prev) => {
+          const without = prev.filter((a) => {
+            const aid = a.id || a.objectId;
+            return aid !== optimisticId && aid !== rid;
+          });
+          return [newActivity, ...without];
+        });
+      } else {
+        await fetchActivities();
+      }
+    } catch (err) {
+      console.error('Bulk add failed', err);
+      setActivities((prev) => prev.filter((a) => (a.id || a.objectId) !== optimisticId));
+      throw err;
     }
-    setActivities((prev) => [...optimisticActivities, ...prev]);
-
-    void (async () => {
-      let didRefetchForMissingActivity = false;
-      await Promise.all(
-        optimisticActivities.map(async (opt) => {
-          const optimisticId = opt._clientKey;
-          try {
-            const res = await createActivity(id, {
-              action: 'extraction',
-              payload,
-            });
-            if (res?.surgery) setSurgery((prev) => mergeSurgeryPatch(prev, res.surgery));
-            const serverAct = res?.activity;
-            if (serverAct) {
-              const rid = serverAct.id || serverAct.objectId;
-              const newActivity = {
-                ...serverAct,
-                _clientKey: optimisticId,
-                user: {
-                  id: myUserId,
-                  firstName: user?.firstName,
-                  lastName: user?.lastName,
-                  username: user?.username,
-                },
-                userId: myUserId,
-                action: 'extraction',
-                _optimistic: false,
-              };
-              setActivities((prev) => {
-                const without = prev.filter((a) => {
-                  const aid = a.id || a.objectId;
-                  return aid !== optimisticId && aid !== rid;
-                });
-                return [newActivity, ...without];
-              });
-            } else if (!didRefetchForMissingActivity) {
-              didRefetchForMissingActivity = true;
-              await fetchActivities();
-            }
-          } catch (err) {
-            console.error('Bulk add item failed', err);
-            setActivities((prev) => prev.filter((a) => (a.id || a.objectId) !== optimisticId));
-          }
-        })
-      );
-    })();
   };
 
   const myActivities = activities.filter((a) => {
@@ -724,7 +709,11 @@ export default function CountingInterface() {
                               color: 'grey.800',
                             }}
                           >
-                            {a.payload?.label ?? a.action}
+                            {(() => {
+                              const units = getActivityExtractionBulkCount(a.payload);
+                              const lbl = a.payload?.label ?? a.action;
+                              return units > 1 ? format(S.activityLogBulkPrimary, { count: units, label: lbl }) : lbl;
+                            })()}
                           </Box>
                           {formatTime(a.createdAt)}
                         </Box>

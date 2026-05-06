@@ -112,6 +112,39 @@ function mergeTechnicianIfMissing(surgery, userId) {
   surgery.set('technicianIds', [...raw, uRef]);
 }
 
+const EXTRACTION_ACTIVITY_BULK_COUNT_MAX = 500;
+
+/**
+ * Parses payload.count for bulk extraction rows (>1 graft per ActivityLog document).
+ * @returns {number | null} null if count is present but invalid
+ */
+function extractionActivityMultiplierOrNull(payload) {
+  if (payload == null || payload.count == null) return 1;
+  const n = Number(payload.count);
+  if (!Number.isInteger(n) || n < 1) return null;
+  if (n > EXTRACTION_ACTIVITY_BULK_COUNT_MAX) return null;
+  return n;
+}
+
+/** Same as extractionActivityMultiplierOrNull but treat invalid explicit count as 1 (legacy / corrupt rows). */
+function extractionActivityMultiplierLoose(payload) {
+  const m = extractionActivityMultiplierOrNull(payload);
+  return m !== null ? m : 1;
+}
+
+function sanitizedExtractionActivityPayload(payload) {
+  const p = payload || {};
+  const mult = extractionActivityMultiplierOrNull(p);
+  if (mult === null) return null;
+  const out = {
+    label: p.label,
+    intactHairs: p.intactHairs ?? 0,
+    totalHairs: p.totalHairs ?? 1,
+  };
+  if (mult > 1) out.count = mult;
+  return out;
+}
+
 function applyExtractionDelta(extraction, entry, delta) {
   const ext = extraction || { entries: [] };
   const entries = [...(ext.entries || [])];
@@ -308,20 +341,30 @@ router.post('/:id/activities', async (req, res) => {
     if (isBenchTechnician(req) && surgery.get('status') !== 'active') {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const { action, payload } = req.body;
+    const { action, payload: rawPayload } = req.body;
     if (action !== 'extraction') {
       return res.status(400).json({ error: 'action must be extraction' });
+    }
+    const mult = extractionActivityMultiplierOrNull(rawPayload);
+    if (mult === null) {
+      return res.status(400).json({
+        error: `count must be a whole number from 1 to ${EXTRACTION_ACTIVITY_BULK_COUNT_MAX}`,
+      });
+    }
+    const payload = sanitizedExtractionActivityPayload(rawPayload);
+    if (!payload || payload.label == null) {
+      return res.status(400).json({ error: 'payload must include label' });
     }
     const activity = new ActivityLog();
     activity.set('surgeryId', surgery.id);
     activity.set('userId', req.user.id);
     activity.set('accountId', toId(surgery.get('accountId')));
     activity.set('action', action);
-    activity.set('payload', payload || {});
+    activity.set('payload', payload);
     await activity.save(null, { useMasterKey: true });
     const ext = surgery.get('extraction') || {};
     if (payload?.label != null) {
-      const newExt = applyExtractionDelta(ext, payload, 1);
+      const newExt = applyExtractionDelta(ext, payload, mult);
       if (!ext.startedAt) newExt.startedAt = new Date().toISOString();
       surgery.set('extraction', newExt);
     }
@@ -348,19 +391,29 @@ router.patch('/:id/activities/:activityId', async (req, res) => {
     }
     const activity = await new Parse.Query(ActivityLog).get(req.params.activityId, { useMasterKey: true });
     if (!activity || toId(activity.get('surgeryId')) !== surgery.id) return res.status(404).json({ error: 'Not found' });
-    const { payload: newPayload } = req.body;
+    const bodyPayload = req.body.payload || {};
     const oldPayload = activity.get('payload') || {};
+    const mergedPayload = { ...oldPayload, ...bodyPayload };
     const action = activity.get('action');
     if (action !== 'extraction') {
       return res.status(400).json({ error: 'Only extraction activities can be edited' });
     }
-    const ext = surgery.get('extraction') || {};
-    surgery.set('extraction', applyExtractionDelta(ext, oldPayload, -1));
-    if (newPayload?.label) {
-      const afterUndo = surgery.get('extraction') || {};
-      surgery.set('extraction', applyExtractionDelta(afterUndo, newPayload, 1));
+    const oldMult = extractionActivityMultiplierLoose(oldPayload);
+    const newMult = extractionActivityMultiplierOrNull(mergedPayload);
+    if (newMult === null) {
+      return res.status(400).json({
+        error: `count must be a whole number from 1 to ${EXTRACTION_ACTIVITY_BULK_COUNT_MAX}`,
+      });
     }
-    activity.set('payload', newPayload || oldPayload);
+    const storedPayload = sanitizedExtractionActivityPayload(mergedPayload);
+    if (!storedPayload || storedPayload.label == null) {
+      return res.status(400).json({ error: 'payload must include label' });
+    }
+    const ext = surgery.get('extraction') || {};
+    surgery.set('extraction', applyExtractionDelta(ext, oldPayload, -oldMult));
+    const afterUndo = surgery.get('extraction') || {};
+    surgery.set('extraction', applyExtractionDelta(afterUndo, storedPayload, newMult));
+    activity.set('payload', storedPayload);
     await activity.save(null, { useMasterKey: true });
     await surgery.save(null, { useMasterKey: true });
     res.json({
@@ -387,7 +440,10 @@ router.delete('/:id/activities/:activityId', async (req, res) => {
     const payload = activity.get('payload') || {};
     const ext = surgery.get('extraction') || {};
     const plc = surgery.get('placement') || {};
-    if (action === 'extraction') surgery.set('extraction', applyExtractionDelta(ext, payload, -1));
+    if (action === 'extraction') {
+      const mult = extractionActivityMultiplierLoose(payload);
+      surgery.set('extraction', applyExtractionDelta(ext, payload, -mult));
+    }
     else if (action === 'placement') surgery.set('placement', applyPlacementDelta(plc, -1));
     await surgery.save(null, { useMasterKey: true });
     await activity.destroy({ useMasterKey: true });
