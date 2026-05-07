@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import { useParams, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -32,12 +33,17 @@ import {
   groupGraftButtonsByDenominatorRows,
   sortGraftButtonsByGraftType,
   getActivityExtractionBulkCount,
+  getTotalExtractedForGoal,
 } from '../../utils/surgery';
 import { triggerLightHaptic } from '../../utils/haptics';
 import EditTechnicianButtonsModal from '../../components/EditTechnicianButtonsModal';
 import BulkAddModal from '../../components/BulkAddModal';
 import BulkQuantityKeypad, { BULK_QUANTITY_MAX } from '../../components/BulkQuantityKeypad';
 import S, { format } from '../../strings';
+import { radius } from '../../theme/tokens';
+import useGraftGoalCelebration from '../../hooks/useGraftGoalCelebration';
+import usePollWhileVisible from '../../hooks/usePollWhileVisible';
+import { SURGERY_DETAIL_POLL_INTERVAL_MS } from '../../constants/polling';
 
 const LONG_PRESS_MS = 500;
 /** Tech activity list: newest-first; load in chunks to limit DOM / reconciliation. */
@@ -449,6 +455,16 @@ export default function CountingInterface() {
     [technicianStats, user]
   );
   const extractionCompleted = !!surgery?.extraction?.completedAt;
+
+  /** Full surgery graft totals come from the Surgery document; activities GET is per-tech only. Poll so all bench UIs see when any tech crosses the account goal. */
+  const shouldPollSurgeryTotals =
+    Boolean(id) &&
+    !surgeryPendingStart &&
+    surgery?.status === 'active' &&
+    !extractionCompleted;
+
+  usePollWhileVisible(pollSurgeryLight, SURGERY_DETAIL_POLL_INTERVAL_MS, shouldPollSurgeryTotals);
+
   const myActivities = useMemo(
     () =>
       activities.filter((a) => {
@@ -469,6 +485,13 @@ export default function CountingInterface() {
   );
 
   const activityListHasMore = activityVisibleCount < myActivities.length;
+
+  const graftGoal = surgery?.graftGoal ?? 0;
+  const totalSurgeryGrafts = getTotalExtractedForGoal(surgery, activities);
+  const surgeryGoalReached = graftGoal > 0 && totalSurgeryGrafts >= graftGoal;
+  useGraftGoalCelebration(id, graftGoal, totalSurgeryGrafts, {
+    enabled: Boolean(id) && !surgeryPendingStart,
+  });
 
   const handleBack = () => navigate('/remote/surgeries');
 
@@ -748,10 +771,11 @@ export default function CountingInterface() {
         overflow: 'hidden',
       }}
     >
-      {/* Header — same spacing as surgical dashboard */}
+      {/* Header — same spacing as surgical dashboard; goal badge centered in bar */}
       <Box
         sx={{
           flexShrink: 0,
+          position: 'relative',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -761,20 +785,85 @@ export default function CountingInterface() {
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            minWidth: 0,
+            flex: '1 1 0',
+            pr: 1,
+            zIndex: 1,
+          }}
+        >
           <Button
             onClick={handleBack}
             color="inherit"
             startIcon={<ArrowBackIcon />}
-            sx={{ textTransform: 'none' }}
+            sx={{ textTransform: 'none', flexShrink: 0 }}
           >
             Back
           </Button>
-          <Typography variant="h6" fontWeight={600}>
+          <Typography variant="h6" fontWeight={600} noWrap sx={{ minWidth: 0 }}>
             {patientLabel}
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        {surgeryGoalReached && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1,
+              maxWidth: { xs: 'min(92vw, 420px)', sm: 'min(70vw, 480px)', md: 520 },
+              pointerEvents: 'none',
+            }}
+          >
+            <Box
+              sx={{
+                bgcolor: 'success.main',
+                color: 'common.white',
+                borderRadius: `${radius.button}px`,
+                boxShadow: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.25,
+                py: 1,
+                px: 1.75,
+              }}
+            >
+              <Box
+                sx={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: '50%',
+                  bgcolor: 'rgba(255,255,255,0.22)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <CheckIcon sx={{ fontSize: 16, color: 'common.white' }} />
+              </Box>
+              <Typography variant="subtitle2" fontWeight={600} sx={{ color: 'inherit', lineHeight: 1.35, textAlign: 'left' }}>
+                {format(S.goalReachedBanner, { count: graftGoal })}
+              </Typography>
+            </Box>
+          </Box>
+        )}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flexWrap: 'wrap',
+            justifyContent: 'flex-end',
+            flex: '1 1 0',
+            pl: 1,
+            zIndex: 1,
+          }}
+        >
           <Button
             variant="outlined"
             size="small"
@@ -859,7 +948,7 @@ export default function CountingInterface() {
             overflowX: 'hidden',
           }}
         >
-          <Paper sx={{ px: 2, py: 1.5, flexShrink: 0 }}>
+          <Paper sx={{ px: 2, py: 1.5, flexShrink: 0, overflow: 'hidden' }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
                 <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>

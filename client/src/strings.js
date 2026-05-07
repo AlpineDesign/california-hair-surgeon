@@ -129,6 +129,7 @@ const strings = {
   techBulkQuickHint:
     'Enter a whole number here, then tap a graft button to log that many.',
   techBulkQuickHelpAria: 'Instructions for bulk entry',
+  goalReachedBanner: 'Original goal of {count} grafts has been reached.',
   techDashActivity: 'Activity',
   techDashActivityLoadMore: 'Load more',
   techDashActivityLoadedHint: 'Showing {visible} of {total}',

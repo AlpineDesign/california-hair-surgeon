@@ -1,16 +1,16 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Box, Typography, Button, Autocomplete, TextField, Chip,
-  Paper, MenuItem, IconButton, Link, Skeleton,
+  Paper, MenuItem, Link, Skeleton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import AddIcon from '@mui/icons-material/Add';
 import { PictureAsPdf as PictureAsPdfIcon } from '@mui/icons-material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { useParams, useNavigate, useLocation, Link as RouterLink } from 'react-router-dom';
+import CheckIcon from '@mui/icons-material/Check';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAdminCompany } from '../../contexts/AdminCompanyContext';
-import { getSurgery, updateSurgery, updateExtraction, updatePlacement, createActivity, getActivities } from '../../api/surgeries';
+import { getSurgery, updateSurgery, updateExtraction, updatePlacement, getActivities } from '../../api/surgeries';
 import BrandLogo from '../../components/BrandLogo';
 import { updatePatient } from '../../api/patients';
 import { getTechnicians, getDoctors } from '../../api/users';
@@ -24,9 +24,9 @@ import {
   formatElapsedForReport,
   getTechnicianStatsFromActivities, getGraftCountsByTechnician,
   getReportTechnicianColumns,
-  getSurgeryTotalMs, getTechnicianDisplayName, getSelectedTechnicians, getExtractionEntries,
+  getSurgeryTotalMs, getTechnicianDisplayName, getSelectedTechnicians,
   formatReportDateTime, formatReportTime, formatDateMmDdYyyy,
-  mergeSurgeryPatch,
+  mergeSurgeryPatch, getTotalExtractedForGoal,
 } from '../../utils/surgery';
 import StatusBadge, { STATUS_CHIP_SX } from '../../components/StatusBadge';
 import PatientModal from '../../components/PatientModal';
@@ -37,6 +37,7 @@ import S, { format } from '../../strings';
 import html2pdf from 'html2pdf.js';
 import usePollWhileVisible from '../../hooks/usePollWhileVisible';
 import { SURGERY_DETAIL_POLL_INTERVAL_MS } from '../../constants/polling';
+import useGraftGoalCelebration from '../../hooks/useGraftGoalCelebration';
 
 const REPORT_PDF_WIDTH = 794; // A4 width in px at 96dpi
 
@@ -314,8 +315,7 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
   const [techniciansModalOpen, setTechniciansModalOpen] = useState(false);
   const [doctorModalOpen, setDoctorModalOpen] = useState(false);
   const [patientModalOpen, setPatientModalOpen] = useState(false);
-  const [activitiesRefresh, setActivitiesRefresh] = useState(0);
-  const [activities] = useSurgeryActivities(surgeryId, activitiesRefresh);
+  const [activities] = useSurgeryActivities(surgeryId);
 
   const patient = surgery?.patient ?? {};
   const extractionStarted = surgery?.extraction?.startedAt;
@@ -332,32 +332,18 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
   const extractionElapsed = getPhaseElapsedMs(surgery?.extraction);
   const placementElapsed = getPhaseElapsedMs(surgery?.placement);
 
-  const entries = getExtractionEntries(surgery, options);
   const activityReportStats = getAggregateExtractionStatsFromActivities(activities);
   const totalExtracted = Math.max(
     getGraftProgressCurrent(surgery),
     activityReportStats.graftCount ?? 0,
   );
   const goal = surgery?.graftGoal ?? 0;
+  const goalReached = goal > 0 && totalExtracted >= goal;
+  useGraftGoalCelebration(surgeryId, goal, totalExtracted, { enabled: true });
   const technicianStats = getTechnicianStatsFromActivities(activities);
   const graftButtonsForCols = surgery?.graftButtons ?? options?.graftButtons ?? [];
   const { techIds } = getGraftCountsByTechnician(activities, graftButtonsForCols);
   const techColumns = getReportTechnicianColumns(technicians, surgery, activities, techIds);
-
-  const handleIncrementExtraction = async (index) => {
-    const entry = entries[index];
-    if (!entry) return;
-    try {
-      const { surgery: updated } = await createActivity(surgeryId, {
-        action: 'extraction',
-        payload: { label: entry.label, intactHairs: entry.intactHairs, totalHairs: entry.totalHairs },
-      });
-      onUpdate((prev) => mergeSurgeryPatch(prev, updated));
-      setActivitiesRefresh((r) => r + 1);
-    } catch (err) {
-      console.error('Failed to update extraction', err);
-    }
-  };
 
   const handleStartExtraction = async () => {
     const extBefore = { ...(surgery?.extraction || {}) };
@@ -533,6 +519,39 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', p: 4, width: '100%', maxWidth: 1400, mx: 'auto' }}>
       <Box sx={{ display: 'flex', gap: 3, width: '100%', alignItems: 'flex-start' }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
+        {goalReached && (
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 3,
+              p: 2.5,
+              bgcolor: 'success.main',
+              color: 'common.white',
+              borderRadius: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                bgcolor: 'rgba(255,255,255,0.22)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <CheckIcon sx={{ fontSize: 28, color: 'common.white' }} />
+            </Box>
+            <Typography variant="subtitle1" fontWeight={600} sx={{ color: 'inherit' }}>
+              {format(S.goalReachedBanner, { count: goal })}
+            </Typography>
+          </Paper>
+        )}
         {/* Top card: Surgery status, time, patient, technicians, Finish */}
         <Paper sx={{ p: 4, mb: 3 }}>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 5 }}>
@@ -741,29 +760,29 @@ function InProgressState({ surgery, surgeryId, options, onUpdate, technicians, d
             <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>
               {formatElapsedMs(totalElapsed)}
             </Typography>
-            <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>
+            <Typography variant="body2" fontWeight={700} sx={{ color: 'inherit', opacity: 0.95, lineHeight: 1.25 }}>
               {S.totalSxTime}
             </Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.potHair ?? 0}</Typography>
-            <Typography variant="caption" color="text.secondary">{S.totalHairs}</Typography>
+            <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.totalHairs}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.singleGrafts ?? 0}</Typography>
-            <Typography variant="caption" color="text.secondary">{S.singleGrafts}</Typography>
+            <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.singleGrafts}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">
               {activityReportStats.potHair ? `${activityReportStats.transRateHair.toFixed(2)}%` : '0%'}
             </Typography>
-            <Typography variant="caption" color="text.secondary">{S.transRateHair}</Typography>
+            <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.transRateHair}</Typography>
           </Paper>
           <Paper sx={{ p: 2, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} color="text.primary">
               {activityReportStats.graftCount ? `${activityReportStats.transRateGrafts.toFixed(2)}%` : '0%'}
             </Typography>
-            <Typography variant="caption" color="text.secondary">{S.transRateGrafts}</Typography>
+            <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.transRateGrafts}</Typography>
           </Paper>
         </Box>
 
@@ -878,6 +897,9 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
   const graftRowLabels = getGraftTypeLabelsForReport(graftTypes, entries, extractionCountByLabel);
   const techColumns = getReportTechnicianColumns(technicians, surgery, activities, techIds);
   const technicianStats = getTechnicianStatsFromActivities(activities);
+  const totalExtractedForGoal = getTotalExtractedForGoal(surgery, activities);
+  const graftGoal = surgery?.graftGoal ?? 0;
+  const goalReached = graftGoal > 0 && totalExtractedForGoal >= graftGoal;
 
   const handleExportPdf = useCallback(() => {
     if (!reportRef.current) return;
@@ -908,6 +930,11 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
             });
             clonedEl.querySelectorAll('[data-report-value]').forEach((el) => {
               el.style.whiteSpace = 'nowrap';
+            });
+
+            clonedEl.querySelectorAll('[data-goal-reached-banner]').forEach((el) => {
+              el.style.backgroundColor = colors.activeGreen;
+              el.style.color = colors.white;
             });
 
             const allPapers = clonedEl.querySelectorAll('[class*="MuiPaper"]');
@@ -1005,6 +1032,39 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
         </Typography>
       </Paper>
 
+      {goalReached && (
+        <Paper
+          data-goal-reached-banner
+          sx={{
+            mb: 3,
+            p: 2.5,
+            bgcolor: 'success.main',
+            color: 'common.white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+          }}
+        >
+          <Box
+            sx={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              bgcolor: 'rgba(255,255,255,0.22)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+          >
+            <CheckIcon sx={{ fontSize: 22, color: 'common.white' }} />
+          </Box>
+          <Typography variant="subtitle1" fontWeight={600} sx={{ color: 'inherit' }}>
+            {format(S.goalReachedBanner, { count: graftGoal })}
+          </Typography>
+        </Paper>
+      )}
+
       {/* Two-column: Patient Information | Surgery Details */}
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 3 }}>
         <Paper sx={{ flex: 1, minWidth: 280, p: 4 }}>
@@ -1040,7 +1100,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           ) : (
             <Typography variant="h4" fontWeight={700} sx={{ color: 'inherit' }}>{activityReportStats.graftCount ?? 0}</Typography>
           )}
-          <Typography variant="caption" sx={{ opacity: 0.9, color: 'inherit' }}>{S.totalGrafts}</Typography>
+          <Typography variant="body2" fontWeight={700} sx={{ color: 'inherit', opacity: 0.95, lineHeight: 1.25 }}>{S.totalGrafts}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
           {activitiesLoading ? (
@@ -1048,7 +1108,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           ) : (
             <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.potHair ?? 0}</Typography>
           )}
-          <Typography variant="caption" color="text.secondary">{S.totalHairs}</Typography>
+          <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.totalHairs}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
           {activitiesLoading ? (
@@ -1056,7 +1116,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
           ) : (
             <Typography variant="h4" fontWeight={700} color="text.primary">{activityReportStats.singleGrafts ?? 0}</Typography>
           )}
-          <Typography variant="caption" color="text.secondary">{S.singleGrafts}</Typography>
+          <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.singleGrafts}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
           {activitiesLoading ? (
@@ -1066,7 +1126,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
               {activityReportStats.potHair ? `${activityReportStats.transRateHair.toFixed(2)}%` : '0%'}
             </Typography>
           )}
-          <Typography variant="caption" color="text.secondary">{S.transRateHair}</Typography>
+          <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.transRateHair}</Typography>
         </Paper>
         <Paper sx={{ p: 2, textAlign: 'center' }}>
           {activitiesLoading ? (
@@ -1076,7 +1136,7 @@ function DoneState({ surgery, surgeryId, company, technicians, options, onReport
               {activityReportStats.graftCount ? `${activityReportStats.transRateGrafts.toFixed(2)}%` : '0%'}
             </Typography>
           )}
-          <Typography variant="caption" color="text.secondary">{S.transRateGrafts}</Typography>
+          <Typography variant="body2" fontWeight={700} color="primary.main" sx={{ lineHeight: 1.25 }}>{S.transRateGrafts}</Typography>
         </Paper>
       </Box>
 

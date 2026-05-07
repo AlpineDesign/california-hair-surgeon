@@ -29,6 +29,13 @@ export function getGraftProgressCurrent(surgery) {
   return Math.max(fromEntries, n);
 }
 
+/** Max of surgery rollup and activity-log graft count — used for goal-reached UI. */
+export function getTotalExtractedForGoal(surgery, activities) {
+  const fromSurgery = getGraftProgressCurrent(surgery);
+  const fromActs = getAggregateExtractionStatsFromActivities(activities).graftCount ?? 0;
+  return Math.max(fromSurgery, fromActs);
+}
+
 export function getGoalPct(surgery) {
   const total = getGraftProgressCurrent(surgery);
   const goal = surgery?.graftGoal || 0;
