@@ -33,6 +33,7 @@ alwaysApply: true
   lastName: String,
   email: String,          // optional — contact info only, used for password reset
   lastActiveAt: Date,
+  termsAcceptedAt: Date, // set on account-owner signup when terms are accepted
 }
 ```
 

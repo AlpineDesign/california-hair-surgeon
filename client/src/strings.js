@@ -52,6 +52,14 @@ const strings = {
   hasAccount: 'Already have an account?',
   loginLink: 'Login',
 
+  authTermsTitle: 'Terms and Conditions',
+  authTermsIntro: 'Please read the agreement below. Scroll to the bottom of this panel, then continue to create your account.',
+  authTermsPdfTitle: 'Terms and Conditions PDF',
+  authTermsScrollHint: 'Scroll this panel to the very bottom to enable Continue.',
+  authTermsOpenPdf: 'Open PDF in a new tab',
+  authTermsAcceptContinue: 'I have read and accept — continue',
+  signUpTermsRequired: 'Terms and conditions must be accepted',
+
   resetPassword: 'Reset Password',
   resetPasswordFor: 'Reset password for',
   changeYourPassword: 'Change your password',
@@ -363,6 +371,65 @@ const strings = {
 
   pickSurgery: 'Pick a Surgery',
   counting: 'Counting',
+
+  landingProductName: 'SurgAssist',
+  landingDemoMailto: 'mailto:erik@californiahairsurgeon.com',
+  landingHeaderLogin: 'Log in',
+  landingHeaderSignup: 'Sign up',
+  landingHeroKicker: 'The Operating System for Hair Transplant Surgery',
+  landingHeroLine1: 'Precision, in real time.',
+  landingHeroCtaPrimary: 'Get started',
+  landingHeroCtaSecondary: 'Request a demo',
+  landingIntroLead:
+    'SurgAssist is the first intraoperative platform built specifically for hair transplant surgery—giving surgeons real-time visibility into graft counts, hair composition, and transection rates as the procedure happens.',
+  landingSectionHow: 'How It Works',
+  landingHowTagline: 'Real-time surgical intelligence',
+  landingHow1Title: '1. Multi-Tech Input (Tablets)',
+  landingHow1Body:
+    'Each technician logs graft counts, hair count per graft, transection per hair, and graft quality.',
+  landingHow2Title: '2. Live OR Dashboard (Surgeon View)',
+  landingHow2Body:
+    'A central display shows total grafts in real time, hair distribution (1s, 2s, 3s, 4s), transection rate (live), per-tech performance, and grafts per hour.',
+  landingHow3Title: '3. Automated Surgical Report',
+  landingHow3Body:
+    'At the end of every case: full graft breakdown, hair totals, transection rates, performance metrics, and patient-ready documentation.',
+  landingSectionBenefits: 'What This Means for You',
+  landingBenefit1Title: 'Better Outcomes',
+  landingBenefit1Body: 'Lower transection = more viable grafts = better growth.',
+  landingBenefit2Title: 'Faster Surgeries',
+  landingBenefit2Body: 'Real-time feedback allows timely intraoperative adjustments.',
+  landingBenefit3Title: 'Stronger Team Performance',
+  landingBenefit3Body: 'Identify training gaps instantly—not months later.',
+  landingBenefit4Title: 'Defensible Data',
+  landingBenefit4Lead:
+    'When a patient asks, “What is your transection rate?”—you don’t estimate. You show them.',
+  landingImpactList:
+    'Compare devices and techniques across cases\nOptimize punch size before outcomes decline\nTrack graft yield against surgical goals\nQuantify revenue vs. effort per case\nTrain new technicians with objective metrics',
+  landingSectionFuture: 'The Future of Hair Transplant Surgery',
+  landingFutureBody:
+    'Patients are getting smarter. They are asking better questions. And the clinics that can answer with data will lead the industry. Early adopters will build trust faster, demonstrate superior outcomes, and set the new standard of care.',
+  landingCtaTitle: 'Built by Surgeons. Used in Real ORs.',
+  landingCtaSubtitle: 'Request a demo or join our early access group.',
+  landingCtaGetDemo: 'Get a demo',
+
+  landingFooterCopyright: '© SurgAssist. All rights reserved.',
+
+  pricingNavLink: 'Pricing',
+  pricingHeadline: 'Simple pricing for your practice',
+  pricingIntro: 'One plan with everything you need for intraoperative tracking and reporting.',
+  pricingTrial: '30-day free trial',
+  pricingRate: '$20 / doctor account / month',
+  pricingFeatureTechnicians: 'Unlimited technician accounts',
+  pricingFeatureSurgeries: 'No cap on surgeries',
+  pricingFeatureBranding: 'Custom practice branding images',
+  pricingFeatureDefaults: 'Customizable surgery defaults',
+  pricingFeatureDashboards: 'User-scoped dashboards',
+  pricingFooterHome: 'Home',
+
+  landingImgAltHero: 'SurgAssist on iPad in the operating room',
+  landingImgAltMacMock: 'SurgAssist dashboard on a MacBook',
+  landingImgAltOfficeBackground: 'Modern office and surgical workspace',
+  landingImgAltCta: 'Clinical team in scrubs',
 
   appTestTitle: 'API test harness',
   appTestIntro:

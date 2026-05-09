@@ -36,8 +36,9 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/signup  (Account Owners only — creates user + account)
 router.post('/signup', async (req, res) => {
   try {
-    const { username, password, firstName, lastName, email } = req.body;
+    const { username, password, firstName, lastName, email, acceptedTerms } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    if (!acceptedTerms) return res.status(400).json({ error: 'Terms and conditions must be accepted' });
 
     // 1. Create the user (masterKey so we can set roles immediately)
     const user = new Parse.User();
@@ -47,6 +48,7 @@ router.post('/signup', async (req, res) => {
     user.set('firstName', firstName || '');
     user.set('lastName',  lastName  || '');
     user.set('roles', ['accountOwner']);
+    user.set('termsAcceptedAt', new Date());
     await user.signUp(null, { useMasterKey: true });
 
     // 2. Create a linked Account

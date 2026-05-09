@@ -3,11 +3,13 @@ import { Box, Card, CardContent, TextField, Button, Typography, Link as MuiLink 
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import BrandLogo from '../../components/BrandLogo';
+import SignupTermsGate from '../../components/SignupTermsGate';
 import S from '../../strings';
 
 export default function Signup() {
   const { signup } = useAuth();
   const navigate = useNavigate();
+  const [step, setStep] = useState('terms');
   const [form, setForm] = useState({ firstName: '', lastName: '', username: '', email: '', password: '', confirm: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +22,14 @@ export default function Signup() {
     setError('');
     setLoading(true);
     try {
-      await signup({ firstName: form.firstName, lastName: form.lastName, username: form.username, email: form.email, password: form.password });
+      await signup({
+        firstName: form.firstName,
+        lastName: form.lastName,
+        username: form.username,
+        email: form.email,
+        password: form.password,
+        acceptedTerms: true,
+      });
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.error || S.signUpError);
@@ -28,6 +37,10 @@ export default function Signup() {
       setLoading(false);
     }
   };
+
+  if (step === 'terms') {
+    return <SignupTermsGate onAccepted={() => setStep('form')} />;
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%', maxWidth: 480 }}>

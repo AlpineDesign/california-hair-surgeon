@@ -33,6 +33,8 @@ import RemoteSurgeries from './pages/remote/RemoteSurgeries';
 import RemoteSettings from './pages/remote/RemoteSettings';
 import CountingInterface from './pages/remote/CountingInterface';
 import AppTests from './pages/dev/AppTests';
+import Landing from './pages/Landing';
+import Pricing from './pages/Pricing';
 
 export default function App() {
   return (
@@ -41,6 +43,8 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/pricing" element={<Pricing />} />
             <Route element={<AuthLayout />}>
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
@@ -78,7 +82,7 @@ export default function App() {
               <Route path="/remote/settings" element={<RemoteSettings />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>

@@ -92,6 +92,7 @@ export default function AppTests() {
           firstName: 'App',
           lastName: 'TestOwner',
           email: `apptest+${stamp}@example.com`,
+          acceptedTerms: true,
         });
         h.setToken(data.token);
         if (!data.token) throw new Error('No token from signup');
